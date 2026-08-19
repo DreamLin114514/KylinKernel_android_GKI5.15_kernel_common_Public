@@ -439,6 +439,9 @@ DECLARE_RESTRICTED_HOOK(android_rvh_set_task_comm,
 DECLARE_HOOK(android_vh_mmput,
 	TP_PROTO(struct mm_struct *mm),
 	TP_ARGS(mm));
+DECLARE_HOOK(android_vh_mmput_mm,
+	TP_PROTO(struct mm_struct *mm),
+	TP_ARGS(mm));
 
 DECLARE_HOOK(android_vh_reweight_entity,
 	TP_PROTO(struct sched_entity *se),

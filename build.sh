@@ -6,6 +6,7 @@ LLVM=1
 JOBS=$(nproc)
 OUT=out
 CLANG_DIR=~/toolchains/clang-x86/clang-r547379/bin
+MODULES_OUT=modules_out
 
 export PATH=${CLANG_DIR}:${PATH}
 
@@ -34,7 +35,16 @@ set_version
 log "Config..."
 make O=$OUT ARCH=$ARCH LLVM=1 gki_defconfig
 
-log "Building -j${JOBS}..."
-make O=$OUT ARCH=$ARCH LLVM=1 -j${JOBS} Image
+log "Building kernel -j${JOBS}..."
+make O=$OUT ARCH=$ARCH LLVM=1 -j${JOBS} Image modules
 
-log "Done! ${OUT}/arch/arm64/boot/Image"
+log "Collecting modules..."
+rm -rf ${MODULES_OUT}
+mkdir -p ${MODULES_OUT}
+find ${OUT} -name "*.ko" -exec cp {} ${MODULES_OUT}/ \;
+cp drivers/moon/*.ko ${MODULES_OUT}/ 2>/dev/null || true
+
+log "Done!"
+log "  Image:   ${OUT}/arch/arm64/boot/Image"
+log "  Modules: ${MODULES_OUT}/"
+ls -lh ${MODULES_OUT}/
