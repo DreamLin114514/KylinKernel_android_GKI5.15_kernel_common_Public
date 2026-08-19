@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 15
 SUBLEVEL = 211
-EXTRAVERSION = -KylinKernel-260819-Release
+EXTRAVERSION = -KylinKernel-260820-Release
 NAME = Trick or Treat
 
 # *DOCUMENTATION*
