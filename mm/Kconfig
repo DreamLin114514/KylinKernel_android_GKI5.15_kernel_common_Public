@@ -970,4 +970,30 @@ config SPECULATIVE_PAGE_FAULT
 	  an unsupported case, the fault handler falls back to classical
 	  processing using the mmap read lock.
 
+
+config KSHRINK_SLABD
+	bool "Asynchronous slab reclaim"
+	default y
+	depends on MEMCG && ANDROID_VENDOR_HOOKS
+	help
+	  Move one eligible user reclaim slab pass at a time to a freezable
+	  kernel worker. This preserves the core reclaim path whenever the
+	  worker already has pending work.
+
+config KSHRINK_LRUVECD
+	bool "Asynchronous lruvec reclaim"
+	depends on PAGE_EXTENSION && ANDROID_VENDOR_HOOKS
+	help
+	  Defer rmap-lock-contended pages to an asynchronous reclaim worker.
+
+config MI_RMAP_EFFICIENCY
+	bool "MI rmap efficiency: protect high-mapcount pages"
+	default y
+	depends on ANDROID_VENDOR_HOOKS
+	help
+	  Skip high-mapcount pages (>= mi_mapcount_thres, default 32) during
+	  reclaim to reduce CPU load caused by reverse mapping during memory
+	  reclaim, protecting multi-process-shared pages (GPU/display buffers)
+	  from being recycled. Faithful port of Xiaomi's mi_rmap_efficiency.
+
 endmenu

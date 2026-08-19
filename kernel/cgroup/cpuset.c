@@ -213,6 +213,27 @@ struct tmpmasks {
 	cpumask_var_t new_cpus;		/* For update_cpumasks_hier() */
 };
 
+bool task_is_booster(struct task_struct *tsk)
+{
+	char comm[sizeof(tsk->comm)];
+
+	get_task_comm(comm, tsk);
+	return !strcmp(comm, "init") || !strcmp(comm, "NodeLooperThrea") ||
+	       !strcmp(comm, "power@1.2-servi") ||
+	       !strcmp(comm, "power@1.3-servi") ||
+	       !strcmp(comm, "perf@1.0-servic") ||
+	       !strcmp(comm, "perf@2.0-servic") ||
+	       !strcmp(comm, "perf@2.1-servic") ||
+	       !strcmp(comm, "perf@2.2-servic") ||
+	       !strcmp(comm, "power@2.0-servi") ||
+	       !strcmp(comm, "iop@") ||
+	       !strcmp(comm, "PERFD-SERVER") ||
+	       !strcmp(comm, "init.qcom.post_") ||
+	       !strcmp(comm, "mtkPowerMsgHdl") ||
+	       !strcmp(comm, "mtkPowerService") ||
+	           !strncmp(comm, "system_perf_ini", 9);
+}
+
 static inline struct cpuset *css_cs(struct cgroup_subsys_state *css)
 {
 	return css ? container_of(css, struct cpuset, css) : NULL;
@@ -1832,12 +1853,7 @@ static void update_tasks_nodemask(struct cpuset *cs)
 
 		migrate = is_memory_migrate(cs);
 
-		/*
-		 * For v1 we can have empty effective_mems, but we cannot
-		 * attach any tasks (see cpuset_can_attach_check()). For v2,
-		 * effective_mems is guaranteed to not be empty.
-		 */
-		mpol_rebind_mm(mm, &cs->effective_mems);
+		mpol_rebind_mm(mm, &cs->mems_allowed);
 		if (migrate)
 			cpuset_migrate_mm(mm, &cs->old_mems_allowed, &newmems);
 		else

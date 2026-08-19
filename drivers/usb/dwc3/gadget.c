@@ -2650,15 +2650,6 @@ static int dwc3_gadget_soft_disconnect(struct dwc3 *dwc)
 
 static int dwc3_gadget_soft_connect(struct dwc3 *dwc)
 {
-	/*
-	 * In the Synopsys DWC_usb31 1.90a programming guide section
-	 * 4.1.9, it specifies that for a reconnect after a
-	 * device-initiated disconnect requires a core soft reset
-	 * (DCTL.CSftRst) before enabling the run/stop bit.
-	 */
-	dwc3_core_soft_reset(dwc);
-
-	dwc3_event_buffers_setup(dwc);
 	__dwc3_gadget_start(dwc);
 	return dwc3_gadget_run_stop(dwc, true);
 }
@@ -3760,46 +3751,13 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 	}
 }
 
-static bool dwc3_prepare_disconnect_gadget(struct dwc3 *dwc,
-					   struct usb_gadget_driver **driver,
-					   struct usb_gadget **gadget)
-{
-	if (!dwc->async_callbacks || !dwc->gadget_driver ||
-	    !dwc->gadget_driver->disconnect)
-		return false;
-
-	*driver = dwc->gadget_driver;
-	*gadget = dwc->gadget;
-
-	return true;
-}
-
 static void dwc3_disconnect_gadget(struct dwc3 *dwc)
 {
-	struct usb_gadget_driver *driver;
-	struct usb_gadget *gadget;
-
-	if (dwc3_prepare_disconnect_gadget(dwc, &driver, &gadget)) {
+	if (dwc->async_callbacks && dwc->gadget_driver->disconnect) {
 		spin_unlock(&dwc->lock);
-		driver->disconnect(gadget);
+		dwc->gadget_driver->disconnect(dwc->gadget);
 		spin_lock(&dwc->lock);
 	}
-}
-
-static void dwc3_disconnect_gadget_sleepable(struct dwc3 *dwc)
-{
-	struct usb_gadget_driver *driver;
-	struct usb_gadget *gadget;
-	unsigned long flags;
-
-	spin_lock_irqsave(&dwc->lock, flags);
-	if (!dwc3_prepare_disconnect_gadget(dwc, &driver, &gadget)) {
-		spin_unlock_irqrestore(&dwc->lock, flags);
-		return;
-	}
-
-	spin_unlock_irqrestore(&dwc->lock, flags);
-	driver->disconnect(gadget);
 }
 
 static void dwc3_suspend_gadget(struct dwc3 *dwc)
@@ -4672,6 +4630,7 @@ void dwc3_gadget_exit(struct dwc3 *dwc)
 
 int dwc3_gadget_suspend(struct dwc3 *dwc)
 {
+	unsigned long flags;
 	int ret;
 
 	ret = dwc3_gadget_soft_disconnect(dwc);
@@ -4685,7 +4644,10 @@ int dwc3_gadget_suspend(struct dwc3 *dwc)
 		return -EAGAIN;
 	}
 
-	dwc3_disconnect_gadget_sleepable(dwc);
+	spin_lock_irqsave(&dwc->lock, flags);
+	if (dwc->gadget_driver)
+		dwc3_disconnect_gadget(dwc);
+	spin_unlock_irqrestore(&dwc->lock, flags);
 
 	return 0;
 }
