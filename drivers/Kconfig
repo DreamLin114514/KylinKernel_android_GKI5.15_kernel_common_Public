@@ -239,4 +239,4 @@ source "drivers/most/Kconfig"
 
 source "drivers/mihw/Kconfig"
 endmenu
-source "drivers/moon/Kconfig"
+source "drivers/module/Kconfig"
