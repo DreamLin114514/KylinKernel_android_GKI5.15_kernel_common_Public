@@ -48,6 +48,10 @@ static unsigned long shrink_lruvec_pages;
 static unsigned long shrink_lruvec_pages_max;
 static unsigned long shrink_lruvec_handle_pages;
 
+module_param(async_shrink_lruvec_setup, bool, 0644);
+MODULE_PARM_DESC(async_shrink_lruvec_setup,
+		"Enable/disable asynchronous kshrink_lruvecd reclaim");
+
 static struct kshrink_page_ext *kshrink_page_ext_get(struct page *page,
 						     struct page_ext **page_ext)
 {
@@ -222,6 +226,7 @@ static void kshrink_lruvecd_set_affinity(void)
 
 static int shrink_lruvecd(void *unused)
 {
+	current->flags |= PF_MEMALLOC | PF_KSWAPD;
 	set_freezable();
 
 	while (!kthread_should_stop()) {
@@ -257,6 +262,7 @@ static int shrink_lruvecd(void *unused)
 		spin_unlock_irq(&l_inactive_lock);
 	}
 
+	current->flags &= ~(PF_MEMALLOC | PF_KSWAPD);
 	return 0;
 }
 
