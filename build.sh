@@ -30,6 +30,23 @@ while getopts "v:j:c" opt; do
     esac
 done
 
+# Auto kernel version from date + build type (unless overridden with -v)
+if [ -z "$VERSION" ]; then
+    DATE=$(date +%y%m%d)
+    log "Build date: ${DATE}"
+    while true; do
+        read -rp "Build type? [R]elease / [T]est (default: Test): " choice
+        case "${choice,,}" in
+            r|release) TYPE="Release" ;;
+            t|test|"") TYPE="Test" ;;
+            *) log "Invalid input, please enter R or T"; continue ;;
+        esac
+        break
+    done
+    VERSION="KylinKernel-${DATE}-${TYPE}"
+    log "Auto version: ${VERSION}"
+fi
+
 set_version
 
 log "Config..."
