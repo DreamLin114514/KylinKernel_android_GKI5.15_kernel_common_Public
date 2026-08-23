@@ -5,10 +5,8 @@
  * Faithful translation of the original module's should_shrink_async()
  * decision path and worker to a built-in (no module_exit) kernel worker:
  *  - android_vh_shrink_slab_bypass hook with a single pending slot;
- *  - caller gate: plain foreground callers (oom_score_adj == 0, incl.
- *    com.miui.home) have their shrink_slab() call bypassed and dropped
- *    synchronously; only kswapd, the worker itself, and callers with a
- *    non-zero oom_score_adj reach the async path;
+ *  - caller gate: kswapd, the worker itself (both PF_KSWAPD) proceed
+ *    directly; other callers are subject to the throttle/queue logic;
  *  - hook-side throttle (diff_jiffies < HZ*1) before waking the worker;
  *  - even when the single pending slot is already occupied, *bypass is
  *    still set and the request is dropped (the original ignores the
@@ -199,13 +197,12 @@ bool kshrink_slabd_queue(gfp_t gfp_mask, int nid,
 }
 
 /*
- * Original should_shrink_async(): first the caller gate - plain foreground
- * callers (oom_score_adj == 0, incl. com.miui.home) are bypassed and
- * dropped synchronously; kswapd, the worker itself (both PF_KSWAPD) and
- * non-zero-oom_score_adj callers proceed. Then, once enabled, a request is
- * only queued if at least HZ*1 jiffies passed since the last accepted
- * pass. The worker itself always runs synchronously, and the queue's
- * return value is deliberately ignored (a full slot still bypasses).
+ * kshrink_slabd_bypass(): kswapd and the worker itself (both PF_KSWAPD)
+ * proceed directly; other callers are subject to the throttle/queue
+ * logic. Once enabled, a request is only queued if at least HZ*1 jiffies
+ * passed since the last accepted pass. The worker itself always runs
+ * synchronously, and the queue's return value is deliberately ignored
+ * (a full slot still bypasses).
  */
 static void kshrink_slabd_bypass(void *data, gfp_t gfp_mask, int nid,
 				 struct mem_cgroup *memcg, int priority,
@@ -213,14 +210,6 @@ static void kshrink_slabd_bypass(void *data, gfp_t gfp_mask, int nid,
 {
 	static unsigned long prev_jiffies;
 	unsigned long curr_jiffies, diff_jiffies;
-
-	if (!current_is_kswapd() &&
-	    current != READ_ONCE(kshrink_slabd_task) &&
-	    (current->group_leader->signal->oom_score_adj == 0 ||
-	     !strcmp(current->group_leader->comm, "com.miui.home"))) {
-		*bypass = true;
-		return;
-	}
 
 	if (!READ_ONCE(kshrink_slabd_enabled)) {
 		*bypass = false;
