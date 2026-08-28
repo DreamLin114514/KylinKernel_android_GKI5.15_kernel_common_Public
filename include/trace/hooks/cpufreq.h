@@ -47,6 +47,10 @@ DECLARE_HOOK(android_vh_cpufreq_target,
 		unsigned int old_target_freq),
 	TP_ARGS(policy, target_freq, old_target_freq));
 
+DECLARE_HOOK(android_vh_cpufreq_online,
+	TP_PROTO(struct cpufreq_policy *policy),
+	TP_ARGS(policy));
+
 DECLARE_HOOK(android_vh_cpufreq_offline,
 	TP_PROTO(struct device *dev, int val),
 	TP_ARGS(dev, val));

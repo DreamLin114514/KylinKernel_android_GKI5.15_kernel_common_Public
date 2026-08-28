@@ -1596,6 +1596,8 @@ static int cpufreq_online(unsigned int cpu)
 
 	pr_debug("initialization complete\n");
 
+	trace_android_vh_cpufreq_online(policy);
+
 	return 0;
 
 out_destroy_policy:
