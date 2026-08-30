@@ -4,3 +4,4 @@
 #
 
 obj-$(CONFIG_MI_UNION_POWER) += unionpower/
+obj-$(CONFIG_MIHW) += millet/

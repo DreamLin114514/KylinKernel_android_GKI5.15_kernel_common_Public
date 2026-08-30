@@ -3,6 +3,7 @@
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/sched/signal.h>
+#include <linux/freezer.h>
 
 #include "cgroup-internal.h"
 
@@ -326,3 +327,20 @@ void cgroup_freeze(struct cgroup *cgrp, bool freeze)
 		cgroup_file_notify(&cgrp->events_file);
 	}
 }
+
+bool cgroup_task_freeze(struct task_struct *task)
+{
+	bool ret = false;
+
+	if (task->flags & PF_FROZEN)
+		return false;
+
+	spin_lock_irq(&task->sighand->siglock);
+	if (task->signal->flags & SIGNAL_STOP_STOPPED)
+		goto out;
+	ret = freezing(task) && cgroup_freezing(task);
+out:
+	spin_unlock_irq(&task->sighand->siglock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(cgroup_task_freeze);
