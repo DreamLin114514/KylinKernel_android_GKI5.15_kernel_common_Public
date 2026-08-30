@@ -16,7 +16,7 @@ config MI_UNION_POWER
 
 
 config MI_RMAP_EFFICIENCY
-        tristate "MI rmap efficiency: protect high-mapcount pages"
+        bool "MI rmap efficiency: protect high-mapcount pages"
         default y
         depends on ANDROID_VENDOR_HOOKS
         help
