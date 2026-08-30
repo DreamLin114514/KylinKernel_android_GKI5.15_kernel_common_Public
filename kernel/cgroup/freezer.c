@@ -331,16 +331,25 @@ void cgroup_freeze(struct cgroup *cgrp, bool freeze)
 bool cgroup_task_freeze(struct task_struct *task)
 {
 	bool ret = false;
+	unsigned long flags;
 
-	if (task->flags & PF_FROZEN)
+	if (!task || (task->flags & PF_FROZEN))
 		return false;
 
-	spin_lock_irq(&task->sighand->siglock);
+	/*
+	 * The task may be exiting concurrently (e.g. traced from
+	 * android_vh_do_send_sig_info which fires before do_send_sig_info()
+	 * takes sighand->siglock), so use lock_task_sighand() to safely
+	 * bail out when sighand is already gone.
+	 */
+	if (!lock_task_sighand(task, &flags))
+		return false;
+
 	if (task->signal->flags & SIGNAL_STOP_STOPPED)
 		goto out;
 	ret = freezing(task) && cgroup_freezing(task);
 out:
-	spin_unlock_irq(&task->sighand->siglock);
+	unlock_task_sighand(task, &flags);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(cgroup_task_freeze);
