@@ -971,12 +971,6 @@ config SPECULATIVE_PAGE_FAULT
 	  processing using the mmap read lock.
 
 
-config KSHRINK_LRUVECD
-	bool "Asynchronous lruvec reclaim"
-	depends on PAGE_EXTENSION && ANDROID_VENDOR_HOOKS
-	help
-	  Defer rmap-lock-contended pages to an asynchronous reclaim worker.
-
 config MI_RMAP_EFFICIENCY
 	bool "MI rmap efficiency: protect high-mapcount pages"
 	default y
