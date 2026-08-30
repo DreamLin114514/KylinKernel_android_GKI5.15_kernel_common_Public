@@ -14,6 +14,17 @@ config MI_UNION_POWER
 	  SurfaceFlinger/compositor side to report frame events to be useful;
 	  without reporting it is inert.
 
+
+config MI_RMAP_EFFICIENCY
+        tristate "MI rmap efficiency: protect high-mapcount pages"
+        default y
+        depends on ANDROID_VENDOR_HOOKS
+        help
+          Skip high-mapcount pages (>= mi_mapcount_thres, default 32) during
+          reclaim to reduce CPU load caused by reverse mapping during memory
+          reclaim, protecting multi-process-shared pages (GPU/display buffers)
+          from being recycled. Faithful port of Xiaomi's mi_rmap_efficiency.
+
 config MIHW
 	bool "Xiaomi Mi hardware/software framework"
 	default n

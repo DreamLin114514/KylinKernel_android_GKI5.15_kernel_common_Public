@@ -219,7 +219,21 @@ static int __init mi_rmap_efficiency_init(void)
 	pr_info("mi_rmap_efficiency: initialized\n");
 	return 0;
 }
-late_initcall(mi_rmap_efficiency_init);
+
+static void __exit mi_rmap_efficiency_exit(void)
+{
+	unregister_trace_android_vh_page_should_be_protected(
+		mi_check_mapcount, NULL);
+	if (kobj) {
+		sysfs_remove_group(kobj, &mi_rmap_check_attr_group);
+		kobject_put(kobj);
+		kobj = NULL;
+	}
+	pr_info("mi_rmap_efficiency: exit\n");
+}
+
+module_init(mi_rmap_efficiency_init);
+module_exit(mi_rmap_efficiency_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Xiaomi <maminghui5@xiaomi.com> (ported)");
