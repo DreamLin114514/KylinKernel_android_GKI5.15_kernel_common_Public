@@ -60,6 +60,9 @@
 
 #include <linux/swapops.h>
 #include <linux/balloon_compaction.h>
+#ifdef CONFIG_KSHRINK_LRUVECD
+#include <linux/kshrink_lruvecd.h>
+#endif
 
 #include "internal.h"
 
@@ -1290,6 +1293,9 @@ static enum page_references page_check_references(struct page *page,
 		return PAGEREF_ACTIVATE;
 
 	trace_android_vh_page_trylock_set(page);
+#ifdef CONFIG_KSHRINK_LRUVECD
+	setpage_reclaim_trylock(page);
+#endif
 	trace_android_vh_check_page_look_around_ref(page, &ret);
 	if (ret)
 		return ret;
@@ -1299,6 +1305,11 @@ static enum page_references page_check_references(struct page *page,
 	trace_android_vh_page_trylock_get_result(page, &trylock_fail);
 	if (trylock_fail)
 		return PAGEREF_KEEP;
+#ifdef CONFIG_KSHRINK_LRUVECD
+	/* if reclaim_trylock bit still set, trylock failed and been skipped */
+	if (page_reclaim_trylock_fail(page))
+		return PAGEREF_KEEP;
+#endif
 	/*
 	 * Mlock lost the isolation race with us.  Let try_to_unmap()
 	 * move the page to the unevictable list.
@@ -1697,8 +1708,12 @@ retry:
 
 			if (unlikely(PageTransHuge(page)))
 				flags |= TTU_SPLIT_HUGE_PMD;
-			if (!ignore_references)
+			if (!ignore_references) {
 				trace_android_vh_page_trylock_set(page);
+#ifdef CONFIG_KSHRINK_LRUVECD
+				setpage_reclaim_trylock(page);
+#endif
+			}
 			try_to_unmap(page, flags);
 			if (page_mapped(page)) {
 				stat->nr_unmap_fail += nr_pages;
@@ -1813,6 +1828,9 @@ retry:
 					 * leave it off the LRU).
 					 */
 					trace_android_vh_page_trylock_clear(page);
+#ifdef CONFIG_KSHRINK_LRUVECD
+					clearpage_reclaim_trylock(page);
+#endif
 					nr_reclaimed++;
 					continue;
 				}
@@ -1851,6 +1869,9 @@ free_it:
 		 * appear not as the counts should be low
 		 */
 		trace_android_vh_page_trylock_clear(page);
+#ifdef CONFIG_KSHRINK_LRUVECD
+		clearpage_reclaim_trylock(page);
+#endif
 		if (unlikely(PageTransHuge(page)))
 			destroy_compound_page(page);
 		else
@@ -1923,6 +1944,41 @@ keep:
 
 	return nr_reclaimed;
 }
+
+#ifdef CONFIG_KSHRINK_LRUVECD
+/*
+ * Reclaim pages handed over by kshrink_lruvecd: pages whose trylock was
+ * contended/skipped during a normal reclaim pass. Runs in the async
+ * kthread context (PF_MEMALLOC), so a contended page here is tried again
+ * without stalling the original reclaim path.
+ */
+int unforce_reclaim_pages_from_list(struct list_head *page_list)
+{
+	struct scan_control sc = {
+		.gfp_mask = GFP_KERNEL,
+		.priority = DEF_PRIORITY,
+		.may_writepage = 1,
+		.may_unmap = 1,
+		.may_swap = 1,
+	};
+	unsigned long nr_reclaimed;
+	struct reclaim_stat dummy_stat;
+	struct page *page;
+
+	list_for_each_entry(page, page_list, lru)
+		ClearPageActive(page);
+
+	nr_reclaimed = shrink_page_list(page_list, NODE_DATA(0), &sc,
+				       &dummy_stat, false);
+
+	while (!list_empty(page_list)) {
+		page = lru_to_page(page_list);
+		list_del(&page->lru);
+		putback_lru_page(page);
+	}
+	return nr_reclaimed;
+}
+#endif /* CONFIG_KSHRINK_LRUVECD */
 
 unsigned int reclaim_clean_pages_from_list(struct zone *zone,
 					    struct list_head *page_list)
@@ -2343,6 +2399,9 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 		return 0;
 
 	nr_reclaimed = shrink_page_list(&page_list, pgdat, sc, &stat, false);
+#ifdef CONFIG_KSHRINK_LRUVECD
+	wakeup_kshrink_lruvecd(&page_list);
+#endif
 	trace_android_vh_handle_failed_page_trylock(&page_list);
 
 	spin_lock_irq(&lruvec->lru_lock);
@@ -2471,6 +2530,9 @@ static void shrink_active_list(unsigned long nr_to_scan,
 		if (bypass)
 			goto skip_page_referenced;
 		trace_android_vh_page_trylock_set(page);
+#ifdef CONFIG_KSHRINK_LRUVECD
+		setpage_reclaim_trylock(page);
+#endif
 		/* Referenced or rmap lock contention: rotate */
 		if (page_referenced(page, 0, sc->target_mem_cgroup,
 				     &vm_flags) != 0) {
@@ -2485,12 +2547,18 @@ static void shrink_active_list(unsigned long nr_to_scan,
 			 */
 			if ((vm_flags & VM_EXEC) && page_is_file_lru(page)) {
 				trace_android_vh_page_trylock_clear(page);
+#ifdef CONFIG_KSHRINK_LRUVECD
+				clearpage_reclaim_trylock(page);
+#endif
 				nr_rotated += thp_nr_pages(page);
 				list_add(&page->lru, &l_active);
 				continue;
 			}
 		}
 		trace_android_vh_page_trylock_clear(page);
+#ifdef CONFIG_KSHRINK_LRUVECD
+		clearpage_reclaim_trylock(page);
+#endif
 skip_page_referenced:
 		ClearPageActive(page);	/* we are de-activating */
 		SetPageWorkingset(page);

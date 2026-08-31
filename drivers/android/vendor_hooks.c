@@ -118,6 +118,7 @@
 #include <trace/hooks/fuse.h>
 #include <trace/hooks/asoc.h>
 #include <trace/hooks/blk.h>
+#include <trace/hooks/lz4_decompress.h>
 
 /*
  * Export tracepoints that act as a bare tracehook (ie: have no trace event
@@ -601,3 +602,4 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mm_free);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mm_init);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_create_worker);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_map_pages_range);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lz4_decompress_bypass);

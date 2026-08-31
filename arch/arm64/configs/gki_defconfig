@@ -1,6 +1,7 @@
 # CONFIG_LOCALVERSION_AUTO is not set
 CONFIG_SYNC_FILE=y
 CONFIG_KSHRINK_SLABD=y
+CONFIG_KSHRINK_LRUVECD=y
 CONFIG_MI_RMAP_EFFICIENCY=y
 CONFIG_MI_UNION_POWER=y
 CONFIG_SW_SYNC=y
@@ -744,6 +745,7 @@ CONFIG_MI_LAUNCH_BOOST=y
 # Kylin Moon Modules
 CONFIG_KYLIN_READAHEAD_OPT=y
 CONFIG_MI_SW_SYNC=y
+CONFIG_LZ4ASM=y
 # Xiaomi millet smart frozen framework (xaga port)
 # Disabled: the built-in framework's binder/signal/cgroup-freezer hooks
 # caused an endless reboot loop when entering recovery on this device
