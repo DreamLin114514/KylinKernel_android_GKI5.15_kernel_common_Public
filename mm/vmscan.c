@@ -3115,6 +3115,21 @@ static int get_swappiness(struct lruvec *lruvec, struct scan_control *sc)
 	swappiness = mem_cgroup_swappiness(memcg);
 	trace_android_vh_tune_swappiness(&swappiness);
 
+	/*
+	 * Kylin: 内存占用过高(>80%)时把匿名换出力度从 180 降到 120。
+	 * zram 写入受阻(mem_limit 误设 / zsmalloc 分配失败)时, 180 会让
+	 * kswapd 反复尝试换出匿名页却无法推进, 退化为高 CPU 空转;
+	 * 120 更偏向 file/slab 回收, 异常状态下回收仍能取得进展。
+	 * 仅作用于全局回收(kswapd / 直接回收), 不改 cgroup 回收语义。
+	 */
+	if (swappiness > 120 && !sc->target_mem_cgroup) {
+		unsigned long total = totalram_pages();
+		unsigned long free_pages = global_zone_page_state(NR_FREE_PAGES);
+
+		if (free_pages * 5 < total)	/* free < 20% => used > 80% */
+			swappiness = 120;
+	}
+
 	return swappiness;
 }
 
