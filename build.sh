@@ -21,11 +21,12 @@ set_version() {
     log "Version: ${VERSION}"
 }
 
-while getopts "v:j:c" opt; do
+while getopts "v:j:co" opt; do
     case $opt in
         v) VERSION="$OPTARG" ;;
         j) JOBS="$OPTARG" ;;
         c) make O=$OUT ARCH=$ARCH LLVM=1 mrproper; exit 0 ;;
+        o) O3=1 ;;
         *) err "Invalid option" ;;
     esac
 done
@@ -53,7 +54,12 @@ log "Config..."
 make O=$OUT ARCH=$ARCH LLVM=1 gki_defconfig
 
 log "Building kernel -j${JOBS}..."
-make O=$OUT ARCH=$ARCH LLVM=1 -j${JOBS} Image modules
+if [ "$O3" = "1" ]; then
+    log "Optimization: -O3 enabled (via KBUILD_CFLAGS)"
+    make O=$OUT ARCH=$ARCH LLVM=1 KBUILD_CFLAGS+=-O3 -j${JOBS} Image modules
+else
+    make O=$OUT ARCH=$ARCH LLVM=1 -j${JOBS} Image modules
+fi
 
 log "Collecting modules..."
 rm -rf ${MODULES_OUT}
