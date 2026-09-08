@@ -21,6 +21,23 @@ set_version() {
     log "Version: ${VERSION}"
 }
 
+# prompt helper: reads a single character, returns lowercased via tr (dash-safe)
+ask_yesno() {
+    # $1 = prompt text ; sets REPLY_VAL=1/0
+    while true; do
+        read -r -p "$1" ans
+        ans=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
+        case "$ans" in
+            y|yes) REPLY_VAL=1; return 0 ;;
+            n|no|"") REPLY_VAL=0; return 0 ;;
+            *) log "Invalid input, please enter Y or N"; continue ;;
+        esac
+    done
+}
+
+O3=
+VERSION=
+JOBS_SET=
 while getopts "v:j:co" opt; do
     case $opt in
         v) VERSION="$OPTARG" ;;
@@ -30,14 +47,16 @@ while getopts "v:j:co" opt; do
         *) err "Invalid option" ;;
     esac
 done
+shift $((OPTIND - 1))
 
 # Auto kernel version from date + build type (unless overridden with -v)
 if [ -z "$VERSION" ]; then
     DATE=$(date +%y%m%d)
     log "Build date: ${DATE}"
     while true; do
-        read -rp "Build type? [R]elease / [T]est (default: Test): " choice
-        case "${choice,,}" in
+        read -r -p "Build type? [R]elease / [T]est (default: Test): " choice
+        choice=$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')
+        case "$choice" in
             r|release) TYPE="Release" ;;
             t|test|"") TYPE="Test" ;;
             *) log "Invalid input, please enter R or T"; continue ;;
@@ -50,16 +69,24 @@ fi
 
 set_version
 
+# Ask for -O3 unless already forced via -o flag
+if [ -z "$O3" ]; then
+    ask_yesno "Enable -O3 optimization? [Y]es / [N]o (default: No): "
+    O3=$REPLY_VAL
+fi
+
 log "Config..."
 make O=$OUT ARCH=$ARCH LLVM=1 gki_defconfig
 
 log "Building kernel -j${JOBS}..."
+CFLAGS_EXTRA=
 if [ "$O3" = "1" ]; then
-    log "Optimization: -O3 enabled (via KBUILD_CFLAGS)"
-    make O=$OUT ARCH=$ARCH LLVM=1 KBUILD_CFLAGS+=-O3 -j${JOBS} Image modules
-else
-    make O=$OUT ARCH=$ARCH LLVM=1 -j${JOBS} Image modules
+    log "Optimization: -O3 enabled (via KCFLAGS)"
+    CFLAGS_EXTRA="KCFLAGS=-O3"
 fi
+# Use KCFLAGS (not KBUILD_CFLAGS) so the kernel's full built-in flag set is preserved.
+# Passing KBUILD_CFLAGS on the command line would clobber all kbuild defaults.
+make O=$OUT ARCH=$ARCH LLVM=1 $CFLAGS_EXTRA -j${JOBS} Image modules
 
 log "Collecting modules..."
 rm -rf ${MODULES_OUT}
