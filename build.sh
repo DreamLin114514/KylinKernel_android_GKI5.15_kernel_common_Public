@@ -54,12 +54,13 @@ if [ -z "$VERSION" ]; then
     DATE=$(date +%y%m%d)
     log "Build date: ${DATE}"
     while true; do
-        read -r -p "Build type? [R]elease / [T]est (default: Test): " choice
+        read -r -p "Build type? [R]elease / [T]est / [D]ev (default: Test): " choice
         choice=$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')
         case "$choice" in
             r|release) TYPE="Release" ;;
             t|test|"") TYPE="Test" ;;
-            *) log "Invalid input, please enter R or T"; continue ;;
+            d|dev) TYPE="Dev" ;;
+            *) log "Invalid input, please enter R, T or D"; continue ;;
         esac
         break
     done
