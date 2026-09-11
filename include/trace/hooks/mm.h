@@ -443,9 +443,13 @@ DECLARE_HOOK(android_vh_lock_folio_drop_mmap_end,
 	TP_ARGS(success, tsk, vmf, page, file));
 
 DECLARE_HOOK(android_vh_filemap_update_page,
-	TP_PROTO(struct address_space *mapping, struct page *page,
-		struct file *file),
-	TP_ARGS(mapping, page, file));
+        TP_PROTO(struct address_space *mapping, struct page *page,
+                struct file *file),
+        TP_ARGS(mapping, page, file));
+
+DECLARE_HOOK(android_vh_customize_alloc_gfp,
+        TP_PROTO(gfp_t *alloc_gfp, unsigned int order),
+        TP_ARGS(alloc_gfp, order));
 
 #endif /* _TRACE_HOOK_MM_H */
 
