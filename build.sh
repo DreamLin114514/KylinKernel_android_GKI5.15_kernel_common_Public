@@ -79,6 +79,17 @@ fi
 log "Config..."
 make O=$OUT ARCH=$ARCH LLVM=1 gki_defconfig
 
+# Optional local fragment kconfig_override (merged on top of gki_defconfig)
+# e.g. "# CONFIG_ZRAM is not set" to temporarily disable a feature.
+# Delete/rename the file to build the full-featured kernel again.
+if [ -f kconfig_override ]; then
+    log "Merging kconfig_override:"
+    sed 's/^/    /' kconfig_override
+    scripts/kconfig/merge_config.sh -m -O $OUT \
+        arch/arm64/configs/gki_defconfig kconfig_override >/dev/null
+    make O=$OUT ARCH=$ARCH LLVM=1 olddefconfig
+fi
+
 log "Building kernel -j${JOBS}..."
 CFLAGS_EXTRA=
 if [ "$O3" = "1" ]; then
