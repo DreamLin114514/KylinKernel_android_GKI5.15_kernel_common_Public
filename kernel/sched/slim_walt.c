@@ -24,6 +24,7 @@
 #include "sched.h"
 
 #define SLIM_WALT_DEFAULT_WINDOW_MS	20
+#define SLIM_WALT_STALE              0xffffffffUL
 
 static unsigned int slim_walt_ctrl = 1;	/* 1 = enabled by default (cheap, ABI-safe) */
 module_param(slim_walt_ctrl, uint, 0644);
@@ -57,6 +58,34 @@ bool slim_walt_enabled(void)
 }
 EXPORT_SYMBOL_GPL(slim_walt_enabled);
 
+/*
+ * Age the last completed window against the time since this CPU last
+ * ticked.  A NO_HZ idle CPU gets no scheduler ticks, so its window
+ * freezes holding the pre-idle busy ratio; without decay a busy->idle
+ * transition would leave the reading stuck high forever and pin the
+ * cpufreq governor at max frequency while the device is idle.
+ * Halve the ratio per elapsed window; report stale after 10 windows.
+ * Returns the number of halvings, or SLIM_WALT_STALE when too old.
+ */
+static unsigned long slim_walt_age_decay(int cpu)
+{
+	struct slim_walt_cpu *sw = per_cpu_ptr(&slim_walt_cpu, cpu);
+	u64 win = (u64)slim_walt_window_ms * NSEC_PER_MSEC;
+	u64 age;
+
+	if (!sw->last_tick)
+		return SLIM_WALT_STALE;
+
+	age = ktime_get_ns() - sw->last_tick;
+	if (age < win)
+		return 0;	/* current window: no decay */
+
+	age = div_u64(age, win);
+	if (age >= 10)
+		return SLIM_WALT_STALE;
+	return age;
+}
+
 static void slim_walt_tick_hook(void *data, struct rq *rq)
 {
 	struct slim_walt_cpu *sw;
@@ -67,7 +96,9 @@ static void slim_walt_tick_hook(void *data, struct rq *rq)
 		return;
 
 	sw = this_cpu_ptr(&slim_walt_cpu);
-	now = rq_clock(rq);
+	/* ktime (not rq_clock) so the age decay in the read path can
+	 * compare against ktime_get_ns() on the same time base */
+	now = ktime_get_ns();
 
 	if (unlikely(!sw->last_tick)) {
 		sw->last_tick = now;
@@ -76,8 +107,16 @@ static void slim_walt_tick_hook(void *data, struct rq *rq)
 	}
 
 	delta = now - sw->last_tick;
-	if (unlikely(delta > (u64)slim_walt_window_ms * NSEC_PER_MSEC * 8))
-		delta = 0;	/* long gap (suspend); do not skew the window */
+	if (unlikely(delta > (u64)slim_walt_window_ms * NSEC_PER_MSEC * 8)) {
+		/* long gap (suspend / deep idle): discard the partial window so
+		 * the stale pre-idle busy ratio is not committed on wakeup */
+		sw->busy_ns = 0;
+		sw->wall_ns = 0;
+		sw->run_sum = 0;
+		sw->run_peak = 0;
+		sw->run_samples = 0;
+		delta = 0;
+	}
 
 	nr = READ_ONCE(rq->nr_running);
 	if (nr)
@@ -110,6 +149,7 @@ static void slim_walt_tick_hook(void *data, struct rq *rq)
 unsigned int slim_walt_get_busy(int cpu)
 {
 	struct slim_walt_cpu *sw;
+	unsigned long decay;
 
 	if (!slim_walt_enabled())
 		return 0;
@@ -118,7 +158,11 @@ unsigned int slim_walt_get_busy(int cpu)
 	if (!sw->prev_wall_ns)
 		return 0;
 
-	return div_u64(sw->prev_busy_ns * 100, sw->prev_wall_ns);
+	decay = slim_walt_age_decay(cpu);
+	if (decay == SLIM_WALT_STALE)
+		return 0;
+
+	return div_u64((sw->prev_busy_ns >> decay) * 100, sw->prev_wall_ns);
 }
 EXPORT_SYMBOL_GPL(slim_walt_get_busy);
 
@@ -126,6 +170,7 @@ EXPORT_SYMBOL_GPL(slim_walt_get_busy);
 unsigned long slim_walt_get_load(int cpu)
 {
 	struct slim_walt_cpu *sw;
+	unsigned long decay;
 
 	if (!slim_walt_enabled())
 		return 0;
@@ -134,7 +179,11 @@ unsigned long slim_walt_get_load(int cpu)
 	if (!sw->prev_wall_ns)
 		return 0;
 
-	return div_u64(sw->prev_busy_ns * 1024, sw->prev_wall_ns);
+	decay = slim_walt_age_decay(cpu);
+	if (decay == SLIM_WALT_STALE)
+		return 0;
+
+	return div_u64((sw->prev_busy_ns >> decay) * 1024, sw->prev_wall_ns);
 }
 EXPORT_SYMBOL_GPL(slim_walt_get_load);
 
