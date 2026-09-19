@@ -37,6 +37,9 @@ enum {
 	FAULT_INFO_TYPE,	/* struct f2fs_fault_info */
 #endif
 	RESERVED_BLOCKS,	/* struct f2fs_sb_info */
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	FLEXIBLE_SSR_PARAMS,
+#endif
 	CPRC_INFO,	/* struct ckpt_req_control */
 	ATGC_INFO,	/* struct atgc_management */
 };
@@ -85,6 +88,10 @@ static unsigned char *__struct_ptr(struct f2fs_sb_info *sbi, int struct_type)
 #ifdef CONFIG_F2FS_STAT_FS
 	else if (struct_type == STAT_INFO)
 		return (unsigned char *)F2FS_STAT(sbi);
+#endif
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	else if (struct_type == FLEXIBLE_SSR_PARAMS)
+		return (unsigned char *)&sbi->flexible_ssr_params;
 #endif
 	else if (struct_type == CPRC_INFO)
 		return (unsigned char *)&sbi->cprc_info;
@@ -832,6 +839,14 @@ static struct f2fs_attr f2fs_attr_##_name = {			\
 		offsetof(struct struct_name, elname),		\
 		sizeof_field(struct struct_name, elname))
 
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+#define FLEXIBLE_SSR_RO_ATTR(elname)				\
+	F2FS_RO_ATTR(FLEXIBLE_SSR_PARAMS, f2fs_flexible_ssr_params,		\
+		elname, elname)
+#define FLEXIBLE_SSR_RW_ATTR(elname)				\
+	F2FS_RW_ATTR(FLEXIBLE_SSR_PARAMS, f2fs_flexible_ssr_params,	\
+		elname, elname)
+#endif
 #define F2FS_GENERAL_RO_ATTR(name) \
 static struct f2fs_attr f2fs_attr_##name = __ATTR(name, 0444, name##_show, NULL)
 
@@ -872,6 +887,16 @@ F2FS_RW_ATTR(NM_INFO, f2fs_nm_info, dirty_nats_ratio, dirty_nats_ratio);
 F2FS_RW_ATTR(NM_INFO, f2fs_nm_info, max_roll_forward_node_blocks, max_rf_node_blocks);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, max_victim_search, max_victim_search);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, migration_granularity, migration_granularity);
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+FLEXIBLE_SSR_RW_ATTR(hot_data_lower_limit);
+FLEXIBLE_SSR_RW_ATTR(hot_data_waterline);
+FLEXIBLE_SSR_RO_ATTR(hot_data_ssr_enable);
+FLEXIBLE_SSR_RW_ATTR(hot_data_max_filesize);
+FLEXIBLE_SSR_RW_ATTR(warm_data_lower_limit);
+FLEXIBLE_SSR_RW_ATTR(warm_data_waterline);
+FLEXIBLE_SSR_RO_ATTR(warm_data_ssr_enable);
+FLEXIBLE_SSR_RW_ATTR(warm_data_max_filesize);
+#endif
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, dir_level, dir_level);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, cp_interval, interval_time[CP_TIME]);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, idle_interval, interval_time[REQ_TIME]);
@@ -1036,6 +1061,16 @@ static struct attribute *f2fs_attrs[] = {
 	ATTR_LIST(features),
 	ATTR_LIST(reserved_blocks),
 	ATTR_LIST(current_reserved_blocks),
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	ATTR_LIST(hot_data_lower_limit),
+	ATTR_LIST(hot_data_waterline),
+	ATTR_LIST(hot_data_ssr_enable),
+	ATTR_LIST(hot_data_max_filesize),
+	ATTR_LIST(warm_data_lower_limit),
+	ATTR_LIST(warm_data_waterline),
+	ATTR_LIST(warm_data_ssr_enable),
+	ATTR_LIST(warm_data_max_filesize),
+#endif
 	ATTR_LIST(encoding),
 	ATTR_LIST(encoding_flags),
 	ATTR_LIST(effective_lookup_mode),

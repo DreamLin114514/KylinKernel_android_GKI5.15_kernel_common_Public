@@ -4493,6 +4493,10 @@ try_onemore:
 	if (err)
 		goto free_root_inode;
 
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	f2fs_init_flexible_ssr_params(sbi);
+#endif
+
 	err = f2fs_register_sysfs(sbi);
 	if (err)
 		goto free_compress_inode;

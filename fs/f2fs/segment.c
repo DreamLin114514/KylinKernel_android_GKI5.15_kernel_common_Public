@@ -823,7 +823,7 @@ static void __remove_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno,
  * Adding dirty entry into seglist is not critical operation.
  * If a given segment is one of current working segments, it won't be added.
  */
-static void locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno)
+void locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno)
 {
 	struct dirty_seglist_info *dirty_i = DIRTY_I(sbi);
 	unsigned short valid_blocks, ckpt_valid_blocks;
@@ -2636,7 +2636,7 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
  * Allocate a current working segment.
  * This function always allocates a free segment in LFS manner.
  */
-static int new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec)
+int new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec)
 {
 	struct curseg_info *curseg = CURSEG_I(sbi, type);
 	unsigned short seg_type = curseg->seg_type;
@@ -2718,7 +2718,7 @@ bool f2fs_segment_has_free_slot(struct f2fs_sb_info *sbi, int segno)
  * This function always allocates a used segment(from dirty seglist) by SSR
  * manner, so it should recover the existing segment information of valid blocks
  */
-static int change_curseg(struct f2fs_sb_info *sbi, int type)
+int change_curseg(struct f2fs_sb_info *sbi, int type)
 {
 	struct dirty_seglist_info *dirty_i = DIRTY_I(sbi);
 	struct curseg_info *curseg = CURSEG_I(sbi, type);
@@ -2752,7 +2752,7 @@ static int change_curseg(struct f2fs_sb_info *sbi, int type)
 	return 0;
 }
 
-static int get_ssr_segment(struct f2fs_sb_info *sbi, int type,
+int get_ssr_segment(struct f2fs_sb_info *sbi, int type,
 				int alloc_mode, unsigned long long age);
 
 static int get_atssr_segment(struct f2fs_sb_info *sbi, int type,
@@ -2802,7 +2802,35 @@ static int __f2fs_init_atgc_curseg(struct f2fs_sb_info *sbi)
 }
 int f2fs_init_inmem_curseg(struct f2fs_sb_info *sbi)
 {
-	return __f2fs_init_atgc_curseg(sbi);
+	int ret = 0;
+
+	ret = __f2fs_init_atgc_curseg(sbi);
+	if (ret) {
+		f2fs_warn(sbi, "Failed to init atgc curseg, errno=%d",  ret);
+		return ret;
+	}
+
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	if (sbi->flexible_ssr_params.hot_data_ssr_enable) {
+		ret = __f2fs_init_flexible_ssr_curseg(sbi, CURSEG_HOT_DATA_FLEX,
+						CURSEG_HOT_DATA);
+		if (ret) {
+			f2fs_warn(sbi, "Failed to init hot data ssr curseg, errno=%d", ret);
+			return ret;
+		}
+	}
+
+	if (sbi->flexible_ssr_params.warm_data_ssr_enable) {
+		ret = __f2fs_init_flexible_ssr_curseg(sbi, CURSEG_WARM_DATA_FLEX,
+						CURSEG_WARM_DATA);
+		if (ret) {
+			f2fs_warn(sbi, "Failed to init warm data ssr curseg, errno=%d", ret);
+			return ret;
+		}
+	}
+#endif
+
+	return ret;
 }
 
 static void __f2fs_save_inmem_curseg(struct f2fs_sb_info *sbi, int type)
@@ -2831,6 +2859,10 @@ void f2fs_save_inmem_curseg(struct f2fs_sb_info *sbi)
 
 	if (sbi->am.atgc_enabled)
 		__f2fs_save_inmem_curseg(sbi, CURSEG_ALL_DATA_ATGC);
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	__f2fs_save_inmem_curseg(sbi, CURSEG_HOT_DATA_FLEX);
+	__f2fs_save_inmem_curseg(sbi, CURSEG_WARM_DATA_FLEX);
+#endif
 }
 
 static void __f2fs_restore_inmem_curseg(struct f2fs_sb_info *sbi, int type)
@@ -2856,9 +2888,13 @@ void f2fs_restore_inmem_curseg(struct f2fs_sb_info *sbi)
 
 	if (sbi->am.atgc_enabled)
 		__f2fs_restore_inmem_curseg(sbi, CURSEG_ALL_DATA_ATGC);
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	__f2fs_restore_inmem_curseg(sbi, CURSEG_HOT_DATA_FLEX);
+	__f2fs_restore_inmem_curseg(sbi, CURSEG_WARM_DATA_FLEX);
+#endif
 }
 
-static int get_ssr_segment(struct f2fs_sb_info *sbi, int type,
+int get_ssr_segment(struct f2fs_sb_info *sbi, int type,
 				int alloc_mode, unsigned long long age)
 {
 	struct curseg_info *curseg = CURSEG_I(sbi, type);
@@ -3396,6 +3432,13 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 	return type;
 }
 
+void reset_curseg_fields(struct curseg_info *curseg)
+{
+	curseg->inited = false;
+	curseg->segno = NULL_SEGNO;
+	curseg->next_segno = 0;
+}
+
 int f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		block_t old_blkaddr, block_t *new_blkaddr,
 		struct f2fs_summary *sum, int type,
@@ -3539,6 +3582,13 @@ static void do_write_page(struct f2fs_summary *sum, struct f2fs_io_info *fio)
 {
 	int type = __get_segment_type(fio);
 	bool keep_order = (f2fs_lfs_mode(fio->sbi) && type == CURSEG_COLD_DATA);
+
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	if (IS_FLEX_SSR_TARGET_TYPE(type) && fio->page && fio->page->mapping &&
+		f2fs_can_flexible_ssr(fio->sbi, type, i_size_read(fio->page->mapping->host))) {
+		type += CURSEG_HOT_DATA_FLEX;
+	}
+#endif
 
 	if (keep_order)
 		f2fs_down_read(&fio->sbi->io_order_lock);
@@ -4542,6 +4592,12 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 			array[i].seg_type = CURSEG_COLD_DATA;
 		else if (i == CURSEG_ALL_DATA_ATGC)
 			array[i].seg_type = CURSEG_COLD_DATA;
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+		else if (i == CURSEG_HOT_DATA_FLEX)
+			array[i].seg_type = CURSEG_HOT_DATA;
+		else if (i == CURSEG_WARM_DATA_FLEX)
+			array[i].seg_type = CURSEG_WARM_DATA;
+#endif
 		array[i].segno = NULL_SEGNO;
 		array[i].next_blkoff = 0;
 		array[i].inited = false;

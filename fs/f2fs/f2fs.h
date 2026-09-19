@@ -1014,7 +1014,11 @@ static inline void set_new_dnode(struct dnode_of_data *dn, struct inode *inode,
  */
 #define	NR_CURSEG_DATA_TYPE	(3)
 #define NR_CURSEG_NODE_TYPE	(3)
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+#define NR_CURSEG_INMEM_TYPE	(4)
+#else
 #define NR_CURSEG_INMEM_TYPE	(2)
+#endif
 #define NR_CURSEG_RO_TYPE	(2)
 #define NR_CURSEG_PERSIST_TYPE	(NR_CURSEG_DATA_TYPE + NR_CURSEG_NODE_TYPE)
 #define NR_CURSEG_TYPE		(NR_CURSEG_INMEM_TYPE + NR_CURSEG_PERSIST_TYPE)
@@ -1030,6 +1034,10 @@ enum {
 	CURSEG_COLD_DATA_PINNED = NR_PERSISTENT_LOG,
 				/* pinned file that needs consecutive block address */
 	CURSEG_ALL_DATA_ATGC,	/* SSR alloctor in hot/warm/cold data area */
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	CURSEG_HOT_DATA_FLEX,	/* SSR alloctor in hot data area, not gc path*/
+	CURSEG_WARM_DATA_FLEX,	/* SSR alloctor in warm data area, not gc path */
+#endif
 	NO_CHECK_TYPE,		/* number of persistent & inmem log */
 };
 
@@ -1610,6 +1618,19 @@ struct decompress_io_ctx {
 #define MAX_COMPRESS_LOG_SIZE		8
 #define MAX_COMPRESS_WINDOW_SIZE(log_size)	((PAGE_SIZE) << (log_size))
 
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+struct f2fs_flexible_ssr_params {
+	unsigned int hot_data_lower_limit;		/* HOT_DATA end threshold */
+	unsigned int hot_data_waterline;		/* HOT_DATA fragmentation threshold */
+	unsigned int hot_data_ssr_enable;		/* Status of the HOT_DATA switch */
+	unsigned int hot_data_max_filesize;		/* HOT_DATA file size threshold */
+	unsigned int warm_data_lower_limit;		/* WARM_DATA end threshold */
+	unsigned int warm_data_waterline;		/* WARM_DATA fragmentation threshold */
+	unsigned int warm_data_ssr_enable;		/* Status of the WARM_DATA switch */
+	unsigned int warm_data_max_filesize;	/* WARM_DATA file size threshold */
+};
+#endif
+
 struct f2fs_sb_info {
 	struct super_block *sb;			/* pointer to VFS super block */
 	struct proc_dir_entry *s_proc;		/* proc entry */
@@ -1749,6 +1770,9 @@ struct f2fs_sb_info {
 	unsigned int max_victim_search;
 	/* migration granularity of garbage collection, unit: segment */
 	unsigned int migration_granularity;
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	struct f2fs_flexible_ssr_params flexible_ssr_params;
+#endif
 
 	/*
 	 * for stat information.
@@ -3636,6 +3660,20 @@ void f2fs_destroy_node_manager_caches(void);
  * segment.c
  */
 bool f2fs_need_SSR(struct f2fs_sb_info *sbi);
+void locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno);
+int new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec);
+int change_curseg(struct f2fs_sb_info *sbi, int type);
+int get_ssr_segment(struct f2fs_sb_info *sbi, int type,
+				int alloc_mode, unsigned long long age);
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+void f2fs_init_flexible_ssr_params(struct f2fs_sb_info *sbi);
+int __f2fs_init_flexible_ssr_curseg(struct f2fs_sb_info *sbi,
+				int type, int seg_type);
+void f2fs_flexible_ssr_close(struct f2fs_sb_info *sbi);
+int f2fs_flexible_ssr_switch(struct f2fs_sb_info *sbi);
+bool f2fs_can_flexible_ssr(struct f2fs_sb_info *sbi,
+				int type, loff_t filesize);
+#endif
 int f2fs_commit_atomic_write(struct inode *inode);
 void f2fs_abort_atomic_write(struct inode *inode, bool clean);
 void f2fs_balance_fs(struct f2fs_sb_info *sbi, bool need);

@@ -1723,6 +1723,12 @@ int f2fs_write_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	}
 
 	f2fs_restore_inmem_curseg(sbi);
+#ifdef CONFIG_F2FS_FLEXIBLE_SSR
+	if (cpc->reason == CP_SYNC)
+		f2fs_flexible_ssr_switch(sbi);
+	else
+		f2fs_flexible_ssr_close(sbi);
+#endif
 stop:
 	unblock_operations(sbi);
 	stat_inc_cp_count(sbi->stat_info);
