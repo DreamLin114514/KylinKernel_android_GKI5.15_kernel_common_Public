@@ -549,6 +549,45 @@ struct cfs_bandwidth { };
 
 #endif	/* CONFIG_CGROUP_SCHED */
 
+/*
+ * u64_u32_load/u64_u32_store
+ *
+ * Use a copy of a u64 value to protect against data race. This is only
+ * applicable for 32-bits architectures.
+ */
+#ifdef CONFIG_64BIT
+# define u64_u32_load_copy(var, copy)       var
+# define u64_u32_store_copy(var, copy, val) (var = val)
+#else
+# define u64_u32_load_copy(var, copy)					\
+({									\
+	u64 __val, __val_copy;						\
+	do {								\
+		__val_copy = copy;					\
+		/*							\
+		 * paired with u64_u32_store_copy(), ordering access	\
+		 * to var and copy.					\
+		 */							\
+		smp_rmb();						\
+		__val = var;						\
+	} while (__val != __val_copy);					\
+	__val;								\
+})
+# define u64_u32_store_copy(var, copy, val)				\
+do {									\
+	typeof(val) __val = (val);					\
+	var = __val;							\
+	/*								\
+	 * paired with u64_u32_load_copy(), ordering access to var and	\
+	 * copy.							\
+	 */								\
+	smp_wmb();							\
+	copy = __val;							\
+} while (0)
+#endif
+# define u64_u32_load(var)      u64_u32_load_copy(var, var##_copy)
+# define u64_u32_store(var, val) u64_u32_store_copy(var, var##_copy, val)
+
 /* CFS-related fields in a runqueue */
 struct cfs_rq {
 	struct load_weight	load;
@@ -637,6 +676,10 @@ struct cfs_rq {
 	int			runtime_enabled;
 	s64			runtime_remaining;
 
+	u64			throttled_pelt_idle;
+#ifndef CONFIG_64BIT
+	u64			throttled_pelt_idle_copy;
+#endif
 	u64			throttled_clock;
 	u64			throttled_clock_pelt;
 	u64			throttled_clock_pelt_time;
@@ -1147,8 +1190,15 @@ struct rq {
 	ANDROID_VENDOR_DATA_ARRAY(1, 96);
 	ANDROID_OEM_DATA_ARRAY(1, 16);
 
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
+	/*
+	 * Upstream PELT-idle clock tracking (cf. v6.1 e2f3e35f1f5a series).
+	 * Stored in the KABI reserve slots instead of the upstream location
+	 * (between lost_idle_time and nr_iowait) so that all existing struct rq
+	 * field offsets and sizeof(rq) stay unchanged for the prebuilt vendor
+	 * modules (GKI KMI: runqueues size 4544).
+	 */
+	ANDROID_KABI_USE(1, u64 clock_pelt_idle);
+	ANDROID_KABI_USE(2, u64 clock_idle);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
 };
@@ -3004,6 +3054,7 @@ static inline bool uclamp_is_used(void)
 {
 	return static_branch_likely(&sched_uclamp_used);
 }
+
 #else /* CONFIG_UCLAMP_TASK */
 static inline unsigned long uclamp_eff_value(struct task_struct *p,
 					     enum uclamp_id clamp_id)
@@ -3030,6 +3081,8 @@ static inline bool uclamp_is_used(void)
 {
 	return false;
 }
+
+static inline bool uclamp_rq_is_capped(struct rq *rq) { return false; }
 
 static inline unsigned long uclamp_rq_get(struct rq *rq,
 					  enum uclamp_id clamp_id)
@@ -3125,10 +3178,44 @@ static inline unsigned long cpu_util_cfs(struct rq *rq)
 	return util;
 }
 
+/*
+ * cpu_util_cfs_boost - CFS util with runnable boosting.
+ *
+ * Returns max(cpu_util_cfs(rq), rq->cfs.avg.runnable_avg) to detect CPU
+ * contention on smaller cores (Android UI ramp-up first-frame jank, etc.)
+ * where util_avg is still decaying from the long-sleeping task while
+ * runnable_avg has already spiked.
+ */
+static inline unsigned long cpu_util_cfs_boost(struct rq *rq)
+{
+	unsigned long util = cpu_util_cfs(rq);
+	unsigned long runnable = READ_ONCE(rq->cfs.avg.runnable_avg);
+
+	return max_t(unsigned long, util, runnable);
+}
+
 static inline unsigned long cpu_util_rt(struct rq *rq)
 {
 	return READ_ONCE(rq->avg_rt.util_avg);
 }
+
+#ifdef CONFIG_UCLAMP_TASK
+/* Is the rq being capped/throttled by uclamp_max? */
+static inline bool uclamp_rq_is_capped(struct rq *rq)
+{
+	unsigned long rq_util;
+	unsigned long max_util;
+
+	if (!static_branch_likely(&sched_uclamp_used))
+		return false;
+
+	rq_util = cpu_util_cfs(rq) + cpu_util_rt(rq);
+	max_util = READ_ONCE(rq->uclamp[UCLAMP_MAX].value);
+
+	return max_util != SCHED_CAPACITY_SCALE && rq_util >= max_util;
+}
+#endif /* CONFIG_UCLAMP_TASK */
+
 #endif
 
 #ifdef CONFIG_HAVE_SCHED_AVG_IRQ
