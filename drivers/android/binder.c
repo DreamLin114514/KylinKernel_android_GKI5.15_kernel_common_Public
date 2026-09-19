@@ -415,6 +415,7 @@ binder_enqueue_work_ilocked(struct binder_work *work,
 {
 	BUG_ON(target_list == NULL);
 	BUG_ON(work->entry.next && !list_empty(&work->entry));
+	trace_android_vh_binder_list_add_work(work, target_list);
 	list_add_tail(&work->entry, target_list);
 }
 
@@ -5589,13 +5590,17 @@ static int binder_ioctl_write_read(struct file *filp,
 		}
 	}
 	if (bwr.read_size > 0) {
+		bool has_special_work = false;
+
 		ret = binder_thread_read(proc, thread, bwr.read_buffer,
 					 bwr.read_size,
 					 &bwr.read_consumed,
 					 filp->f_flags & O_NONBLOCK);
 		trace_binder_read_done(ret);
 		binder_inner_proc_lock(proc);
-		if (!binder_worklist_empty_ilocked(&proc->todo))
+		trace_android_vh_binder_has_proc_work_ilocked(
+			thread, true, &has_special_work);
+		if (!binder_worklist_empty_ilocked(&proc->todo) || has_special_work)
 			binder_wakeup_proc_ilocked(proc);
 		binder_inner_proc_unlock(proc);
 		trace_android_vh_binder_read_done(proc, thread);
