@@ -451,6 +451,28 @@ DECLARE_HOOK(android_vh_customize_alloc_gfp,
         TP_PROTO(gfp_t *alloc_gfp, unsigned int order),
         TP_ARGS(alloc_gfp, order));
 
+DECLARE_HOOK(android_vh_alloc_pages_adjust_wmark,
+	TP_PROTO(gfp_t gfp_mask, int order, int *alloc_flags),
+	TP_ARGS(gfp_mask, order, alloc_flags));
+DECLARE_HOOK(android_vh_alloc_pages_reset_wmark,
+	TP_PROTO(gfp_t gfp_mask, int order, int *alloc_flags,
+		unsigned long *did_some_progress, int *no_progress_loops),
+	TP_ARGS(gfp_mask, order, alloc_flags, did_some_progress,
+		no_progress_loops));
+DECLARE_HOOK(android_vh_get_page_wmark,
+	TP_PROTO(unsigned int alloc_flags, unsigned long *page_wmark),
+	TP_ARGS(alloc_flags, page_wmark));
+DECLARE_HOOK(android_vh_mm_direct_reclaim_enter,
+	TP_PROTO(unsigned int order),
+	TP_ARGS(order));
+DECLARE_HOOK(android_vh_mm_direct_reclaim_exit,
+	TP_PROTO(unsigned long did_some_progress, int retry_times),
+	TP_ARGS(did_some_progress, retry_times));
+struct oom_control;
+DECLARE_HOOK(android_vh_mm_may_oom_exit,
+	TP_PROTO(struct oom_control *oc, unsigned long did_some_progress),
+	TP_ARGS(oc, did_some_progress));
+
 #endif /* _TRACE_HOOK_MM_H */
 
 /* This part must be outside protection */

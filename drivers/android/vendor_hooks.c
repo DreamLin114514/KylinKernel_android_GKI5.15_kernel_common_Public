@@ -61,6 +61,7 @@
 #include <trace/hooks/epoch.h>
 #include <trace/hooks/cpufreq.h>
 #include <trace/hooks/mm.h>
+#include <trace/hooks/compaction.h>
 #include <trace/hooks/preemptirq.h>
 #include <trace/hooks/ftrace_dump.h>
 #include <trace/hooks/ufshcd.h>
@@ -604,3 +605,13 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_create_worker);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_map_pages_range);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_lz4_decompress_bypass);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_page_cache_ra_order_bypass);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alloc_pages_adjust_wmark);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_alloc_pages_reset_wmark);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_get_page_wmark);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mm_direct_reclaim_enter);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mm_direct_reclaim_exit);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mm_may_oom_exit);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_should_memcg_bypass);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_shrink_node);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_compaction_exit);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_compaction_try_to_compact_exit);

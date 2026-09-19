@@ -6044,6 +6044,7 @@ static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 		unsigned long reclaimed;
 		unsigned long scanned;
 		bool skip = false;
+		bool bypass = false;
 
 		/*
 		 * This loop can become CPU-bound when target memcgs
@@ -6055,6 +6056,10 @@ static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 
 		trace_android_vh_shrink_node_memcgs(memcg, &skip);
 		if (skip)
+			continue;
+
+		trace_android_vh_should_memcg_bypass(memcg, sc->priority, &bypass);
+		if (bypass)
 			continue;
 
 		mem_cgroup_calculate_protection(target_memcg, memcg);
@@ -6102,6 +6107,7 @@ static void shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 	struct lruvec *target_lruvec;
 	bool reclaimable = false;
 
+	trace_android_vh_shrink_node(pgdat, sc->target_mem_cgroup);
 	target_lruvec = mem_cgroup_lruvec(sc->target_mem_cgroup, pgdat);
 
 again:

@@ -48,6 +48,7 @@ static inline void count_compact_events(enum vm_event_item item, long delta)
 #undef CREATE_TRACE_POINTS
 #ifndef __GENKSYMS__
 #include <trace/hooks/mm.h>
+#include <trace/hooks/compaction.h>
 #endif
 
 #define block_start_pfn(pfn, order)	round_down(pfn, 1UL << (order))
@@ -2695,6 +2696,7 @@ enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 			break;
 	}
 
+	trace_android_vh_compaction_try_to_compact_exit(&rc);
 	return rc;
 }
 
@@ -2941,6 +2943,8 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 		VM_BUG_ON(!list_empty(&cc.freepages));
 		VM_BUG_ON(!list_empty(&cc.migratepages));
 	}
+
+	trace_android_vh_compaction_exit(pgdat->node_id, cc.order, cc.highest_zoneidx);
 
 	/*
 	 * Regardless of success, we are done until woken up next. But remember
