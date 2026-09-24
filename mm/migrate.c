@@ -979,6 +979,7 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 {
 	int rc = -EAGAIN;
 	bool page_was_mapped = false;
+	bool rmap_locked = false;
 	struct anon_vma *anon_vma = NULL;
 	bool is_lru = !__PageMovable(page);
 
@@ -1080,16 +1081,22 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		/* Establish migration ptes */
 		VM_BUG_ON_PAGE(PageAnon(page) && !PageKsm(page) && !anon_vma,
 				page);
-		try_to_migrate(page, 0);
+		if (anon_vma)
+			rmap_locked = anon_vma_trylock_read(anon_vma);
+		try_to_migrate(page, rmap_locked ? TTU_RMAP_LOCKED : 0);
 		page_was_mapped = true;
 	}
 
 	if (!page_mapped(page))
 		rc = move_to_new_page(newpage, page, mode);
 
-	if (page_was_mapped)
+	if (page_was_mapped) {
 		remove_migration_ptes(page,
-			rc == MIGRATEPAGE_SUCCESS ? newpage : page, false);
+			rc == MIGRATEPAGE_SUCCESS ? newpage : page,
+			rmap_locked);
+		if (rmap_locked)
+			anon_vma_unlock_read(anon_vma);
+	}
 
 out_unlock_both:
 	unlock_page(newpage);
