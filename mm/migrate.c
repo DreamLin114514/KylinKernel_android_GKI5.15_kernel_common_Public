@@ -975,15 +975,20 @@ out:
 }
 
 static int __unmap_and_move(struct page *page, struct page *newpage,
-				int force, enum migrate_mode mode)
+				int force, enum migrate_mode mode,
+				struct anon_vma *held_root)
 {
 	int rc = -EAGAIN;
 	bool page_was_mapped = false;
 	bool rmap_locked = false;
+	bool lock_from_caller = false;
 	struct anon_vma *anon_vma = NULL;
 	bool is_lru = !__PageMovable(page);
 
 	if (!trylock_page(page)) {
+		/* holding root rwsem: never block on page lock (deadlock) */
+		if (held_root)
+			goto out;
 		if (!force || mode == MIGRATE_ASYNC)
 			goto out;
 
@@ -1081,8 +1086,16 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		/* Establish migration ptes */
 		VM_BUG_ON_PAGE(PageAnon(page) && !PageKsm(page) && !anon_vma,
 				page);
-		if (anon_vma)
+		if (held_root) {
+			/* never nest a second root lock; retry next pass */
+			if (!anon_vma || anon_vma->root != held_root) {
+				rc = -EAGAIN;
+				goto out_unlock;
+			}
+			lock_from_caller = rmap_locked = true;
+		} else if (anon_vma) {
 			rmap_locked = anon_vma_trylock_read(anon_vma);
+		}
 		try_to_migrate(page, rmap_locked ? TTU_RMAP_LOCKED : 0);
 		page_was_mapped = true;
 	}
@@ -1094,7 +1107,7 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		remove_migration_ptes(page,
 			rc == MIGRATEPAGE_SUCCESS ? newpage : page,
 			rmap_locked);
-		if (rmap_locked)
+		if (rmap_locked && !lock_from_caller)
 			anon_vma_unlock_read(anon_vma);
 	}
 
@@ -1204,14 +1217,15 @@ int next_demotion_node(int node)
  * to the newly allocated page in newpage.
  */
 static int unmap_and_move(new_page_t get_new_page,
-				   free_page_t put_new_page,
-				   unsigned long private, struct page *page,
-				   int force, enum migrate_mode mode,
-				   enum migrate_reason reason,
-				   struct list_head *ret)
+			   free_page_t put_new_page,
+			   unsigned long private, struct page *page,
+			   int force, enum migrate_mode mode,
+			   enum migrate_reason reason,
+			   struct list_head *ret,
+			   struct anon_vma *held_root,
+			   struct page *newpage)
 {
 	int rc = MIGRATEPAGE_SUCCESS;
-	struct page *newpage = NULL;
 
 	if (!thp_migration_supported() && PageTransHuge(page))
 		return -ENOSYS;
@@ -1226,14 +1240,22 @@ static int unmap_and_move(new_page_t get_new_page,
 				ClearPageIsolated(page);
 			unlock_page(page);
 		}
+		if (newpage) {
+			if (put_new_page)
+				put_new_page(newpage, private);
+			else
+				put_page(newpage);
+		}
 		goto out;
 	}
 
-	newpage = get_new_page(page, private);
-	if (!newpage)
-		return -ENOMEM;
+	if (!newpage) {
+		newpage = get_new_page(page, private);
+		if (!newpage)
+			return -ENOMEM;
+	}
 
-	rc = __unmap_and_move(page, newpage, force, mode);
+	rc = __unmap_and_move(page, newpage, force, mode, held_root);
 	if (rc == MIGRATEPAGE_SUCCESS)
 		set_page_owner_migrate_reason(newpage, reason);
 
@@ -1439,6 +1461,8 @@ static inline int try_split_thp(struct page *page, struct page **page2,
 	return rc;
 }
 
+#define MIGRATE_GROUP_MAX 16
+
 /*
  * migrate_pages - migrate the pages specified in a list, to the free pages
  *		   supplied as the target for the page migration
@@ -1466,6 +1490,11 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 		free_page_t put_new_page, unsigned long private,
 		enum migrate_mode mode, int reason, unsigned int *ret_succeeded)
 {
+	struct anon_vma *grp_av = NULL, *av_tmp;
+	struct page *grp_page[MIGRATE_GROUP_MAX];
+	struct page *grp_new[MIGRATE_GROUP_MAX];
+	struct page *pos, *npp, *grp_next = NULL;
+	int grp_nr, i;
 	int retry = 1;
 	int thp_retry = 1;
 	int nr_failed = 0;
@@ -1502,6 +1531,88 @@ retry:
 			nr_subpages = thp_nr_pages(page);
 			cond_resched();
 
+			/*
+			 * Group consecutive anon pages sharing the same
+			 * anon_vma root; one root rwsem read lock then covers
+			 * the whole batch. newpages are preallocated before
+			 * taking the lock so no reclaim runs under it.
+			 */
+			grp_nr = 0;
+			grp_av = NULL;
+			grp_next = NULL;
+			if (!PageHuge(page) && !PageTransHuge(page) &&
+			    PageAnon(page) && !PageKsm(page) &&
+			    page_count(page) > 1) {
+				grp_av = page_get_anon_vma(page);
+				if (grp_av) {
+					npp = get_new_page(page, private);
+					if (!npp) {
+						put_anon_vma(grp_av);
+						grp_av = NULL;
+					} else {
+						grp_page[0] = page;
+						grp_new[0] = npp;
+						grp_nr = 1;
+						pos = page;
+						while (grp_nr < MIGRATE_GROUP_MAX) {
+							if (&pos->lru == from)
+								break;
+							pos = list_next_entry(pos, lru);
+							if (PageHuge(pos) ||
+							    PageTransHuge(pos) ||
+							    !PageAnon(pos) ||
+							    PageKsm(pos) ||
+							    page_count(pos) <= 1)
+								break;
+							av_tmp = page_get_anon_vma(pos);
+							if (!av_tmp)
+								break;
+							if (av_tmp->root != grp_av->root) {
+								put_anon_vma(av_tmp);
+								break;
+							}
+							put_anon_vma(av_tmp);
+							npp = get_new_page(pos, private);
+							if (!npp)
+								break;
+							grp_page[grp_nr] = pos;
+							grp_new[grp_nr++] = npp;
+						}
+					}
+				}
+			}
+			if (grp_nr) {
+				pos = list_next_entry(grp_page[grp_nr - 1], lru);
+				grp_next = &pos->lru == from ? NULL : pos;
+
+				anon_vma_lock_read(grp_av);
+				for (i = 0; i < grp_nr; i++) {
+					rc = unmap_and_move(get_new_page,
+						put_new_page, private,
+						grp_page[i], pass > 2, mode,
+						reason, &ret_pages,
+						grp_av->root, grp_new[i]);
+					switch (rc) {
+					case -EAGAIN:
+						retry++;
+						break;
+					case MIGRATEPAGE_SUCCESS:
+						nr_succeeded++;
+						break;
+					default:
+						nr_failed++;
+						break;
+					}
+				}
+				anon_vma_unlock_read(grp_av);
+				put_anon_vma(grp_av);
+
+				if (!grp_next)
+					break;
+				page2 = grp_next;
+				continue;
+			}
+
 			if (PageHuge(page))
 				rc = unmap_and_move_huge_page(get_new_page,
 						put_new_page, private, page,
@@ -1510,7 +1621,7 @@ retry:
 			else
 				rc = unmap_and_move(get_new_page, put_new_page,
 						private, page, pass > 2, mode,
-						reason, &ret_pages);
+						reason, &ret_pages, NULL, NULL);
 			/*
 			 * The rules are:
 			 *	Success: non hugetlb page will be freed, hugetlb
