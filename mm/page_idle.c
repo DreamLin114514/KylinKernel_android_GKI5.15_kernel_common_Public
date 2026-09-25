@@ -88,12 +88,14 @@ static bool page_idle_clear_pte_refs_one(struct page *page,
 static void page_idle_clear_pte_refs(struct page *page)
 {
 	/*
-	 * Since rwc.try_lock is unused, rwc is effectively immutable, so we
-	 * can make it static to save some cycles and stack.
+	 * rwc.try_lock makes this non-blocking: the idle bitmap scan must
+	 * never sleep on i_mmap_rwsem/anon_vma rwsems; a contended walk is
+	 * simply skipped and retried on the next scan.
 	 */
 	static struct rmap_walk_control rwc = {
 		.rmap_one = page_idle_clear_pte_refs_one,
 		.anon_lock = page_lock_anon_vma_read,
+		.try_lock = true,
 	};
 	bool need_lock;
 

@@ -259,3 +259,22 @@ config ARCH_HAS_MMIOWB
 config MMIOWB
 	def_bool y if ARCH_HAS_MMIOWB
 	depends on SMP
+
+config RMAP_RWSEM_HACK
+	bool "Restricted reader fast path for rmap rwsems (EXPERIMENTAL)"
+	depends on !PREEMPT_RT && SMP
+	default n
+	help
+	  Tag mapping->i_mmap_rwsem and anon_vma->root->rwsem with
+	  rmap_class, and allow a bounded reader fast path in
+	  rwsem_down_read_slowpath() that only triggers while running
+	  inside rmap_walk_file()/rmap_walk_anon()/rmap_walk_anon_lock().
+	  Ordinary inode/kernfs/mmap rwsems are never tagged, so they
+	  keep the stock slow path.
+
+	  Runtime switches and statistics are exported under
+	  /sys/kernel/rmap_rwsem_hack/. The fast path is OFF by default;
+	  only statistics are always collected.
+
+	  Say N unless you are A/B testing rmap lock latency. If unsure,
+	  say N.

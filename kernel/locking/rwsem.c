@@ -27,6 +27,10 @@
 #include <linux/export.h>
 #include <linux/rwsem.h>
 #include <linux/atomic.h>
+#ifdef CONFIG_RMAP_RWSEM_HACK
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
+#endif
 
 #ifndef CONFIG_PREEMPT_RT
 #include "lock_events.h"
@@ -128,6 +132,174 @@
 #define RWSEM_LOCK_MASK		(RWSEM_WRITER_MASK|RWSEM_READER_MASK)
 #define RWSEM_READ_FAILED_MASK	(RWSEM_WRITER_MASK|RWSEM_FLAG_WAITERS|\
 				 RWSEM_FLAG_HANDOFF|RWSEM_FLAG_READFAIL)
+
+#ifdef CONFIG_RMAP_RWSEM_HACK
+/*
+ * Restricted rmap reader fast path runtime switches.
+ * Fast path is OFF by default; per-cpu statistics are always collected
+ * so an A/B baseline can be captured before enabling anything.
+ * See /sys/kernel/rmap_rwsem_hack/ (created in this file).
+ */
+int rmap_hack_enabled __read_mostly;		/* master fast-path switch */
+int rmap_hack_spin_count __read_mostly = 64;	/* bounded cpu_relax() budget */
+int rmap_hack_defer_contended __read_mostly;	/* defer blocking on contended rmap rwsems */
+
+struct rmap_hack_stat {
+	unsigned long slow_enter;	/* rmap ctx entered read slowpath */
+	unsigned long fast_ok;		/* rmap fast path acquisition */
+	unsigned long fast_fall;	/* fell back to queue logic */
+	unsigned long rsteal_ok;	/* reader steal in rmap ctx */
+	unsigned long sleep_reader;	/* rmap reader went to sleep */
+	unsigned long sleep_writer;	/* writer slept on rmap rwsem */
+	unsigned long handoff_seen;	/* handoff aborted rmap fast path */
+	unsigned long writer_handoff;	/* writer set handoff on rmap rwsem */
+	unsigned long blocked_jiffies;	/* total rmap reader blocked time */
+};
+static DEFINE_PER_CPU(struct rmap_hack_stat, rmap_hack_stats);
+
+#define rmap_sem_in_ctx()	(sem->rmap_class && current->rmap_rwsem_ctx)
+#define rmap_stat_inc(f)	this_cpu_inc(rmap_hack_stats.f)
+#define rmap_stat_add(f, v)	this_cpu_add(rmap_hack_stats.f, (v))
+
+/*
+ * Runtime switches: /sys/kernel/rmap_rwsem_hack/
+ *   enabled          - master fast-path switch (default 0 = OFF)
+ *   spin_count       - bounded cpu_relax() budget (default 64)
+ *   defer_contended  - retry trylock before blocking on contended
+ *                      rmap rwsems in try_lock rwc paths (default 0)
+ *   stats            - aggregated per-cpu counters (always on)
+ */
+static ssize_t rmap_hack_enabled_show(struct kobject *kobj,
+				      struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", rmap_hack_enabled);
+}
+
+static ssize_t rmap_hack_enabled_store(struct kobject *kobj,
+				       struct kobj_attribute *attr,
+				       const char *buf, size_t count)
+{
+	int val;
+
+	if (kstrtoint(buf, 0, &val) || val < 0 || val > 1)
+		return -EINVAL;
+	WRITE_ONCE(rmap_hack_enabled, val);
+	return count;
+}
+
+static ssize_t rmap_hack_spin_count_show(struct kobject *kobj,
+					 struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", rmap_hack_spin_count);
+}
+
+static ssize_t rmap_hack_spin_count_store(struct kobject *kobj,
+					  struct kobj_attribute *attr,
+					  const char *buf, size_t count)
+{
+	int val;
+
+	if (kstrtoint(buf, 0, &val) || val < 0 || val > 100000)
+		return -EINVAL;
+	WRITE_ONCE(rmap_hack_spin_count, val);
+	return count;
+}
+
+static ssize_t rmap_hack_defer_show(struct kobject *kobj,
+				    struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", rmap_hack_defer_contended);
+}
+
+static ssize_t rmap_hack_defer_store(struct kobject *kobj,
+				     struct kobj_attribute *attr,
+				     const char *buf, size_t count)
+{
+	int val;
+
+	if (kstrtoint(buf, 0, &val) || val < 0 || val > 1)
+		return -EINVAL;
+	WRITE_ONCE(rmap_hack_defer_contended, val);
+	return count;
+}
+
+static ssize_t rmap_hack_stats_show(struct kobject *kobj,
+				    struct kobj_attribute *attr, char *buf)
+{
+	unsigned long slow_enter = 0, fast_ok = 0, fast_fall = 0;
+	unsigned long rsteal_ok = 0, sleep_reader = 0, sleep_writer = 0;
+	unsigned long handoff_seen = 0, writer_handoff = 0;
+	unsigned long blocked_jiffies = 0;
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct rmap_hack_stat *s = per_cpu_ptr(&rmap_hack_stats, cpu);
+
+		slow_enter += s->slow_enter;
+		fast_ok += s->fast_ok;
+		fast_fall += s->fast_fall;
+		rsteal_ok += s->rsteal_ok;
+		sleep_reader += s->sleep_reader;
+		sleep_writer += s->sleep_writer;
+		handoff_seen += s->handoff_seen;
+		writer_handoff += s->writer_handoff;
+		blocked_jiffies += s->blocked_jiffies;
+	}
+
+	return sysfs_emit(buf,
+		"slow_enter %lu\n"
+		"fast_ok %lu\n"
+		"fast_fall %lu\n"
+		"rsteal_ok %lu\n"
+		"sleep_reader %lu\n"
+		"sleep_writer %lu\n"
+		"handoff_seen %lu\n"
+		"writer_handoff %lu\n"
+		"blocked_jiffies %lu\n",
+		slow_enter, fast_ok, fast_fall, rsteal_ok,
+		sleep_reader, sleep_writer, handoff_seen,
+		writer_handoff, blocked_jiffies);
+}
+
+static struct kobj_attribute rmap_hack_enabled_attr =
+	__ATTR(enabled, 0644, rmap_hack_enabled_show, rmap_hack_enabled_store);
+static struct kobj_attribute rmap_hack_spin_count_attr =
+	__ATTR(spin_count, 0644, rmap_hack_spin_count_show, rmap_hack_spin_count_store);
+static struct kobj_attribute rmap_hack_defer_attr =
+	__ATTR(defer_contended, 0644, rmap_hack_defer_show, rmap_hack_defer_store);
+static struct kobj_attribute rmap_hack_stats_attr =
+	__ATTR(stats, 0444, rmap_hack_stats_show, NULL);
+
+static struct attribute *rmap_hack_attrs[] = {
+	&rmap_hack_enabled_attr.attr,
+	&rmap_hack_spin_count_attr.attr,
+	&rmap_hack_defer_attr.attr,
+	&rmap_hack_stats_attr.attr,
+	NULL,
+};
+
+static const struct attribute_group rmap_hack_group = {
+	.attrs = rmap_hack_attrs,
+};
+
+static struct kobject *rmap_hack_kobj;
+
+static int __init rmap_hack_sysfs_init(void)
+{
+	int ret;
+
+	rmap_hack_kobj = kobject_create_and_add("rmap_rwsem_hack", kernel_kobj);
+	if (!rmap_hack_kobj)
+		return -ENOMEM;
+	ret = sysfs_create_group(rmap_hack_kobj, &rmap_hack_group);
+	if (ret) {
+		kobject_put(rmap_hack_kobj);
+		rmap_hack_kobj = NULL;
+	}
+	return ret;
+}
+late_initcall(rmap_hack_sysfs_init);
+#endif
 
 /*
  * All writes to owner are protected by WRITE_ONCE() to make sure that
@@ -347,6 +519,10 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 	atomic_long_set(&sem->owner, 0L);
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 	osq_lock_init(&sem->osq);
+#endif
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	sem->rmap_class = 0;
+	sem->rmap_fast_path = 0;
 #endif
 	android_init_vendor_data(sem, 1);
 	android_init_oem_data(sem, 1);
@@ -636,6 +812,10 @@ static inline bool rwsem_try_write_lock(struct rw_semaphore *sem,
 	if (new & RWSEM_FLAG_HANDOFF) {
 		first->handoff_set = true;
 		lockevent_inc(rwsem_wlock_handoff);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		if (sem->rmap_class)
+			rmap_stat_inc(writer_handoff);
+#endif
 		return false;
 	}
 
@@ -983,6 +1163,56 @@ rwsem_down_read_slowpath(struct rw_semaphore *sem, long count, unsigned int stat
 	bool already_on_list = false;
 	bool steal = true;
 	bool rspin = false;
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	unsigned long rmap_wait_start;
+#endif
+
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	/*
+	 * Restricted rmap reader fast path (L3): our RWSEM_READER_BIAS is
+	 * already in sem->count, so when this is a tagged rmap rwsem
+	 * (i_mmap_rwsem / anon_vma->root->rwsem) acquired from inside
+	 * rmap_walk_*() and the writer has just released with no queued
+	 * waiters and no pending handoff, complete the acquisition here
+	 * without touching wait_lock, the wait queue or any wakeup.
+	 *
+	 * Bounded: never spin past rmap_hack_spin_count iterations, and
+	 * bail out the moment WAITERS or HANDOFF appears so writers can
+	 * never be starved by rmap readers.
+	 */
+	if (sem->rmap_class && current->rmap_rwsem_ctx) {
+		rmap_stat_inc(slow_enter);
+		if (sem->rmap_fast_path && rmap_hack_enabled) {
+			long budget = READ_ONCE(rmap_hack_spin_count);
+			long cnt = atomic_long_read(&sem->count);
+
+			if (!(cnt & (RWSEM_FLAG_WAITERS |
+				     RWSEM_FLAG_HANDOFF))) {
+				while (cnt & RWSEM_READ_FAILED_MASK) {
+					if (budget-- <= 0)
+						break;
+					cpu_relax();
+					cnt = atomic_long_read(&sem->count);
+					if (cnt & (RWSEM_FLAG_WAITERS |
+						   RWSEM_FLAG_HANDOFF))
+						break;
+				}
+				if (!(cnt & RWSEM_READ_FAILED_MASK)) {
+					/* pair with the writer's unlock */
+					smp_acquire__after_ctrl_dep();
+					rwsem_set_reader_owned(sem);
+					rmap_stat_inc(fast_ok);
+					trace_android_vh_record_rwsem_lock_starttime(
+							current, jiffies);
+					return sem;
+				}
+			}
+			if (cnt & RWSEM_FLAG_HANDOFF)
+				rmap_stat_inc(handoff_seen);
+			rmap_stat_inc(fast_fall);
+		}
+	}
+#endif
 
 	/*
 	 * To prevent a constant stream of readers from starving a sleeping
@@ -1000,6 +1230,10 @@ rwsem_down_read_slowpath(struct rw_semaphore *sem, long count, unsigned int stat
 	if (steal && !(count & (RWSEM_WRITER_LOCKED | RWSEM_FLAG_HANDOFF))) {
 		rwsem_set_reader_owned(sem);
 		lockevent_inc(rwsem_rlock_steal);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		if (rmap_sem_in_ctx())
+			rmap_stat_inc(rsteal_ok);
+#endif
 
 		/*
 		 * Wake up other readers in the wait queue if it is
@@ -1081,6 +1315,9 @@ queue:
 
 	/* wait to be given the lock */
 	trace_android_vh_rwsem_read_wait_start(sem);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	rmap_wait_start = jiffies;
+#endif
 	for (;;) {
 		set_current_state(state);
 		if (!smp_load_acquire(&waiter.task)) {
@@ -1097,11 +1334,19 @@ queue:
 		}
 		schedule_preempt_disabled();
 		lockevent_inc(rwsem_sleep_reader);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		if (rmap_sem_in_ctx())
+			rmap_stat_inc(sleep_reader);
+#endif
 	}
 
 	__set_current_state(TASK_RUNNING);
 	trace_android_vh_rwsem_read_wait_finish(sem);
 	lockevent_inc(rwsem_rlock);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	if (rmap_sem_in_ctx())
+		rmap_stat_add(blocked_jiffies, jiffies - rmap_wait_start);
+#endif
 	trace_android_vh_record_rwsem_lock_starttime(current, jiffies);
 	return sem;
 
@@ -1233,6 +1478,10 @@ wait:
 
 		schedule();
 		lockevent_inc(rwsem_sleep_writer);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		if (sem->rmap_class)
+			rmap_stat_inc(sleep_writer);
+#endif
 		set_current_state(state);
 trylock_again:
 		raw_spin_lock_irq(&sem->wait_lock);

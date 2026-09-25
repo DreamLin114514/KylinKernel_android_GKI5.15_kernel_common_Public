@@ -67,8 +67,40 @@ struct rw_semaphore {
 	struct lockdep_map	dep_map;
 #endif
 	ANDROID_VENDOR_DATA(1);
-	ANDROID_OEM_DATA_ARRAY(1, 2);
+	/*
+	 * rmap rwsem hack: the tag reuses the trailing ANDROID_OEM_DATA
+	 * reserve through a union instead of adding new fields, so the
+	 * KMI-frozen layout of struct rw_semaphore (64 bytes in this build)
+	 * is preserved.  struct rw_semaphore is embedded in KMI structs
+	 * (mm_struct.mmap_lock, address_space.i_mmap_rwsem, anon_vma.rwsem),
+	 * so growing it shifts every member behind it and breaks vendor
+	 * modules - it must never change size.
+	 *
+	 * Only mapping->i_mmap_rwsem and anon_vma->root->rwsem are tagged
+	 * nonzero, so the restricted reader fast path in
+	 * rwsem_down_read_slowpath() can never trigger on ordinary
+	 * inode/kernfs/mmap rwsems.  __init_rwsem() zeroes the whole 16 byte
+	 * reserve via android_init_oem_data(); the tag is written afterwards.
+	 */
+	union {
+		ANDROID_OEM_DATA_ARRAY(1, 2);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		struct {
+			u8 rmap_class;	/* 0: normal, RMAP_I_MMAP, RMAP_ANON */
+			u8 rmap_fast_path;
+		};
+#endif
+	};
 };
+
+#ifdef CONFIG_RMAP_RWSEM_HACK
+#define RMAP_I_MMAP	1
+#define RMAP_ANON	2
+/* runtime switches (kernel/locking/rwsem.c) */
+extern int rmap_hack_enabled;
+extern int rmap_hack_spin_count;
+extern int rmap_hack_defer_contended;
+#endif
 
 enum rwsem_waiter_type {
 	RWSEM_WAITING_FOR_WRITE,

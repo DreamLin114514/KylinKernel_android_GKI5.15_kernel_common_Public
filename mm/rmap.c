@@ -454,6 +454,10 @@ static void anon_vma_ctor(void *data)
 	struct anon_vma *anon_vma = data;
 
 	init_rwsem(&anon_vma->rwsem);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	anon_vma->rwsem.rmap_class = RMAP_ANON;
+	anon_vma->rwsem.rmap_fast_path = 1;
+#endif
 	atomic_set(&anon_vma->refcount, 0);
 	anon_vma->rb_root = RB_ROOT_CACHED;
 }
@@ -535,6 +539,29 @@ out:
  * reference like with page_get_anon_vma() and then block on the mutex
  * on !rwc->try_lock case.
  */
+/*
+ * rmap_*_lock_read() - rmap read-side acquisition helpers (L4).
+ * Try the optimistic trylock first; only on failure fall back to the
+ * blocking acquisition.  The blocking path runs with
+ * current->rmap_rwsem_ctx set by the enclosing rmap_walk_*(), so the
+ * restricted reader fast path in rwsem_down_read_slowpath() may apply.
+ * All page-table mutating users (try_to_unmap/try_to_migrate/page_mkclean/
+ * page_mlock/migration) go through these too - they must never be skipped.
+ */
+static void rmap_i_mmap_lock_read(struct address_space *mapping)
+{
+	if (i_mmap_trylock_read(mapping))
+		return;
+	i_mmap_lock_read(mapping);
+}
+
+static void rmap_anon_lock_read(struct anon_vma *anon_vma)
+{
+	if (anon_vma_trylock_read(anon_vma))
+		return;
+	anon_vma_lock_read(anon_vma);
+}
+
 struct anon_vma *page_lock_anon_vma_read(struct page *page,
 					 struct rmap_walk_control *rwc)
 {
@@ -571,6 +598,30 @@ struct anon_vma *page_lock_anon_vma_read(struct page *page,
 	}
 
 	if (rwc && rwc->try_lock) {
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		/*
+		 * Deferred contention handling: if the root rwsem has no
+		 * waiters, the failure was transient - retry the trylock a
+		 * bounded number of times instead of forcing the caller
+		 * (page_referenced/page_idle) to give up with contended=true.
+		 * When the rwsem really is contended, bail out immediately so
+		 * reclaim never blocks here.
+		 */
+		if (rmap_hack_defer_contended) {
+			int retry = 8;
+
+			while (retry-- && !rwsem_is_contended(&root_anon_vma->rwsem)) {
+				if (down_read_trylock(&root_anon_vma->rwsem)) {
+					if (!page_mapped(page)) {
+						up_read(&root_anon_vma->rwsem);
+						anon_vma = NULL;
+					}
+					goto out;
+				}
+				cpu_relax();
+			}
+		}
+#endif
 		anon_vma = NULL;
 		rwc->contended = true;
 		goto out;
@@ -590,7 +641,7 @@ struct anon_vma *page_lock_anon_vma_read(struct page *page,
 
 	/* we pinned the anon_vma, its safe to sleep */
 	rcu_read_unlock();
-	anon_vma_lock_read(anon_vma);
+	rmap_anon_lock_read(anon_vma);
 
 	if (atomic_dec_and_test(&anon_vma->refcount)) {
 		/*
@@ -2347,8 +2398,13 @@ static struct anon_vma *rmap_walk_anon_lock(struct page *page,
 {
 	struct anon_vma *anon_vma;
 
-	if (rwc->anon_lock)
-		return rwc->anon_lock(page, rwc);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	current->rmap_rwsem_ctx++;
+#endif
+	if (rwc->anon_lock) {
+		anon_vma = rwc->anon_lock(page, rwc);
+		goto out;
+	}
 
 	/*
 	 * Note: remove_migration_ptes() cannot use page_lock_anon_vma_read()
@@ -2358,19 +2414,35 @@ static struct anon_vma *rmap_walk_anon_lock(struct page *page,
 	 */
 	anon_vma = page_anon_vma(page);
 	if (!anon_vma)
-		return NULL;
+		goto out;
 
 	if (anon_vma_trylock_read(anon_vma))
 		goto out;
 
 	if (rwc->try_lock) {
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		/* deferred-contention rule: retry when nobody is waiting */
+		if (rmap_hack_defer_contended) {
+			int retry = 8;
+
+			while (retry-- &&
+			       !rwsem_is_contended(&anon_vma->root->rwsem)) {
+				if (anon_vma_trylock_read(anon_vma))
+					goto out;
+				cpu_relax();
+			}
+		}
+#endif
 		anon_vma = NULL;
 		rwc->contended = true;
 		goto out;
 	}
 
-	anon_vma_lock_read(anon_vma);
+	rmap_anon_lock_read(anon_vma);
 out:
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	current->rmap_rwsem_ctx--;
+#endif
 	return anon_vma;
 }
 
@@ -2395,6 +2467,9 @@ static void rmap_walk_anon(struct page *page, struct rmap_walk_control *rwc,
 	pgoff_t pgoff_start, pgoff_end;
 	struct anon_vma_chain *avc;
 
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	current->rmap_rwsem_ctx++;
+#endif
 	if (locked) {
 		anon_vma = page_anon_vma(page);
 		/* anon_vma disappear under us? */
@@ -2402,8 +2477,12 @@ static void rmap_walk_anon(struct page *page, struct rmap_walk_control *rwc,
 	} else {
 		anon_vma = rmap_walk_anon_lock(page, rwc);
 	}
-	if (!anon_vma)
+	if (!anon_vma) {
+#ifdef CONFIG_RMAP_RWSEM_HACK
+		current->rmap_rwsem_ctx--;
+#endif
 		return;
+	}
 
 	pgoff_start = page_to_pgoff(page);
 	pgoff_end = pgoff_start + thp_nr_pages(page) - 1;
@@ -2426,6 +2505,9 @@ static void rmap_walk_anon(struct page *page, struct rmap_walk_control *rwc,
 
 	if (!locked)
 		anon_vma_unlock_read(anon_vma);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	current->rmap_rwsem_ctx--;
+#endif
 }
 
 /*
@@ -2457,8 +2539,11 @@ static void rmap_walk_file(struct page *page, struct rmap_walk_control *rwc,
 	 */
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	current->rmap_rwsem_ctx++;
+#endif
 	if (!mapping)
-		return;
+		goto out;
 
 	pgoff_start = page_to_pgoff(page);
 	pgoff_end = pgoff_start + thp_nr_pages(page) - 1;
@@ -2467,17 +2552,31 @@ static void rmap_walk_file(struct page *page, struct rmap_walk_control *rwc,
 					&mapping->i_mmap_rwsem, &got_lock, &success);
 		if (success) {
 			if (!got_lock)
-				return;
+				goto out;
 		} else {
 			if (i_mmap_trylock_read(mapping))
 				goto lookup;
 
 			if (rwc->try_lock) {
+#ifdef CONFIG_RMAP_RWSEM_HACK
+				/* deferred-contention rule: retry when
+				 * nobody is waiting on i_mmap_rwsem */
+				if (rmap_hack_defer_contended) {
+					int retry = 8;
+
+					while (retry-- && !rwsem_is_contended(
+							&mapping->i_mmap_rwsem)) {
+						if (i_mmap_trylock_read(mapping))
+							goto lookup;
+						cpu_relax();
+					}
+				}
+#endif
 				rwc->contended = true;
-				return;
+				goto out;
 			}
 
-			i_mmap_lock_read(mapping);
+			rmap_i_mmap_lock_read(mapping);
 		}
 	}
 lookup:
@@ -2500,6 +2599,11 @@ lookup:
 done:
 	if (!locked)
 		i_mmap_unlock_read(mapping);
+out:
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	current->rmap_rwsem_ctx--;
+#endif
+	return;
 }
 
 void rmap_walk(struct page *page, struct rmap_walk_control *rwc)

@@ -1451,6 +1451,10 @@ struct task_struct {
 # endif
 #endif
 	int				pagefault_disabled;
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	/* nonzero only while inside rmap_walk_* (rmap rwsem hack) */
+	u8				rmap_rwsem_ctx;
+#endif
 #ifdef CONFIG_MMU
 	struct task_struct		*oom_reaper_list;
 	struct timer_list		oom_reaper_timer;

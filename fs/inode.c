@@ -401,6 +401,10 @@ static void __address_space_init_once(struct address_space *mapping)
 {
 	xa_init_flags(&mapping->i_pages, XA_FLAGS_LOCK_IRQ | XA_FLAGS_ACCOUNT);
 	init_rwsem(&mapping->i_mmap_rwsem);
+#ifdef CONFIG_RMAP_RWSEM_HACK
+	mapping->i_mmap_rwsem.rmap_class = RMAP_I_MMAP;
+	mapping->i_mmap_rwsem.rmap_fast_path = 1;
+#endif
 	INIT_LIST_HEAD(&mapping->private_list);
 	spin_lock_init(&mapping->private_lock);
 	mapping->i_mmap = RB_ROOT_CACHED;
