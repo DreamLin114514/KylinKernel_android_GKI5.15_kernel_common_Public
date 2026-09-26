@@ -13,6 +13,10 @@ tipc-y	+= addr.o bcast.o bearer.o \
 
 CFLAGS_trace.o += -I$(src)
 
+# Workaround: Clang crashes on socket.c with aggressive optimization
+CFLAGS_socket.o += -O2
+CFLAGS_REMOVE_socket.o += -O3 $(POLLY_FLAGS)
+
 tipc-$(CONFIG_TIPC_MEDIA_UDP)	+= udp_media.o
 tipc-$(CONFIG_TIPC_MEDIA_IB)	+= ib_media.o
 tipc-$(CONFIG_SYSCTL)		+= sysctl.o
