@@ -38,12 +38,19 @@ ask_yesno() {
 O3=
 VERSION=
 JOBS_SET=
-while getopts "v:j:co" opt; do
+LTO=
+while getopts "v:j:col:" opt; do
     case $opt in
         v) VERSION="$OPTARG" ;;
         j) JOBS="$OPTARG" ;;
         c) make O=$OUT ARCH=$ARCH LLVM=1 mrproper; exit 0 ;;
         o) O3=1 ;;
+        l)
+            case "$OPTARG" in
+                thin|full) LTO="$OPTARG" ;;
+                *) err "Invalid LTO mode '$OPTARG' (use: thin | full)" ;;
+            esac
+            ;;
         *) err "Invalid option" ;;
     esac
 done
@@ -76,6 +83,19 @@ if [ -z "$O3" ]; then
     O3=$REPLY_VAL
 fi
 
+# Ask for LTO mode unless already forced via -l flag
+if [ -z "$LTO" ]; then
+    while true; do
+        read -r -p "LTO mode? [T]hin / [F]ull (default: Thin): " choice
+        choice=$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')
+        case "$choice" in
+            t|thin|"") LTO="thin"; break ;;
+            f|full) LTO="full"; break ;;
+            *) log "Invalid input, please enter T or F"; continue ;;
+        esac
+    done
+fi
+
 log "Config..."
 make O=$OUT ARCH=$ARCH LLVM=1 gki_defconfig
 
@@ -88,6 +108,18 @@ if [ -f kconfig_override ]; then
     scripts/kconfig/merge_config.sh -m -O $OUT \
         arch/arm64/configs/gki_defconfig kconfig_override >/dev/null
     make O=$OUT ARCH=$ARCH LLVM=1 olddefconfig
+fi
+
+# LTO mode (default: thin, gki_defconfig's own setting).
+# Applied last so it composes with any kconfig_override fragment.
+if [ "$LTO" = "full" ]; then
+    log "LTO: FULL (CONFIG_LTO_CLANG_FULL=y) - link peak RAM 20-30GB+"
+    scripts/config --file $OUT/.config -d LTO_CLANG_THIN -e LTO_CLANG_FULL
+    make O=$OUT ARCH=$ARCH LLVM=1 olddefconfig
+    grep -q '^CONFIG_LTO_CLANG_FULL=y' $OUT/.config \
+        || err "Failed to enable CONFIG_LTO_CLANG_FULL"
+else
+    log "LTO: ThinLTO (default)"
 fi
 
 log "Building kernel -j${JOBS}..."
