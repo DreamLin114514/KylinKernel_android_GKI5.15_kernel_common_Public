@@ -161,3 +161,7 @@ x509.genkey
 
 # Documentation toolchain
 sphinx_*/
+
+# Kylin local-only files (not part of the published tree)
+/CHANGELOG.md
+/tools/kylin_engine/
