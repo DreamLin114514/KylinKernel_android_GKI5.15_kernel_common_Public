@@ -912,8 +912,10 @@ void cgroup_leave_frozen(bool always_leave);
 void cgroup_update_frozen(struct cgroup *cgrp);
 void cgroup_freeze(struct cgroup *cgrp, bool freeze);
 void cgroup_freezer_migrate_task(struct task_struct *task, struct cgroup *src,
-				 struct cgroup *dst);
+			 struct cgroup *dst);
+#ifdef CONFIG_CGROUP_FREEZER
 bool cgroup_freezing(struct task_struct *task);
+#endif
 bool cgroup_task_freeze(struct task_struct *task);
 
 static inline bool cgroup_task_frozen(struct task_struct *task)

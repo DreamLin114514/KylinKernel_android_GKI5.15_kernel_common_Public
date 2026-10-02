@@ -1472,7 +1472,7 @@ retry:
 		list_del(&page->lru);
 
 		if (!trylock_page(page))
-			goto keep;
+		goto keep;
 
 		trace_android_vh_shrink_page_lock_owner_set(page);
 

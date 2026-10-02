@@ -261,9 +261,9 @@ config MMIOWB
 	depends on SMP
 
 config RMAP_RWSEM_HACK
-	bool "Restricted reader fast path for rmap rwsems (EXPERIMENTAL)"
-	depends on !PREEMPT_RT && SMP
-	default n
+       bool "Restricted reader fast path for rmap rwsems (EXPERIMENTAL)"
+       depends on !PREEMPT_RT && SMP
+       default n
 	help
 	  Tag mapping->i_mmap_rwsem and anon_vma->root->rwsem with
 	  rmap_class, and allow a bounded reader fast path in

@@ -165,3 +165,11 @@ sphinx_*/
 # Kylin local-only files (not part of the published tree)
 /CHANGELOG.md
 /tools/kylin_engine/
+
+# Local userspace test/example scripts and build logs
+/tools/testing/lruvecd_memory_pressure.sh
+/tools/testing/lruvecd_mmap_stress.c
+/tools/testing/lruvecd_mmap_stress
+/tools/testing/slabd_adaptive_test.sh
+/tools/testing/slabd_stress_test.sh
+/build*.log
