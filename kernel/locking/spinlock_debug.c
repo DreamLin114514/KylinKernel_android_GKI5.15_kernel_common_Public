@@ -96,10 +96,10 @@ static inline void debug_spin_lock_after(raw_spinlock_t *lock)
 
 static inline void debug_spin_unlock(raw_spinlock_t *lock)
 {
-	SPIN_BUG_ON(lock->magic != SPINLOCK_MAGIC, lock, "bad magic");
+	SPIN_BUG_ON(READ_ONCE(lock->magic) != SPINLOCK_MAGIC, lock, "bad magic");
 	SPIN_BUG_ON(!raw_spin_is_locked(lock), lock, "already unlocked");
-	SPIN_BUG_ON(lock->owner != current, lock, "wrong owner");
-	SPIN_BUG_ON(lock->owner_cpu != raw_smp_processor_id(),
+	SPIN_BUG_ON(READ_ONCE(lock->owner) != current, lock, "wrong owner");
+	SPIN_BUG_ON(READ_ONCE(lock->owner_cpu) != raw_smp_processor_id(),
 							lock, "wrong CPU");
 	WRITE_ONCE(lock->owner, SPINLOCK_OWNER_INIT);
 	WRITE_ONCE(lock->owner_cpu, -1);

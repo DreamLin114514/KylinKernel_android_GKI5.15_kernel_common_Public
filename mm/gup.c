@@ -1768,9 +1768,9 @@ size_t fault_in_safe_writeable(const char __user *uaddr, size_t size)
 	} while (start != end);
 	mmap_read_unlock(mm);
 
-	if (size > start - (unsigned long)uaddr)
-		return size - (start - (unsigned long)uaddr);
-	return 0;
+	if (start == end)
+		return 0;
+	return size - (start - (unsigned long)uaddr);
 }
 EXPORT_SYMBOL(fault_in_safe_writeable);
 
