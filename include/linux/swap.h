@@ -448,7 +448,6 @@ static inline unsigned long total_swapcache_pages(void)
 }
 
 extern void show_swap_cache_info(void);
-extern unsigned long shrink_swap_cache_all(void);
 extern int add_to_swap(struct page *page);
 extern void *get_shadow_from_swap_cache(swp_entry_t entry);
 extern int add_to_swap_cache(struct page *page, swp_entry_t entry,
