@@ -1043,15 +1043,6 @@ config RT_GROUP_SCHED
 
 endif #CGROUP_SCHED
 
-config SLIM_WALT
-	bool "SLIM per-CPU windowed load tracking"
-	depends on ANDROID_VENDOR_HOOKS
-	default n
-	help
-	  Per-CPU WALT-style windowed load tracking sampled from the
-	  scheduler tick vendor hook. Does not change task_struct or
-	  struct rq layout, keeping prebuilt GKI vendor modules ABI-safe.
-
 config UCLAMP_TASK_GROUP
 	bool "Utilization clamping per group of tasks"
 	depends on CGROUP_SCHED

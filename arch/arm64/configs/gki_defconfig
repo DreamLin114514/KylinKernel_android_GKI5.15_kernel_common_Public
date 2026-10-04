@@ -752,7 +752,6 @@ CONFIG_MI_LAUNCH_BOOST=y
 CONFIG_KYLIN_READAHEAD_OPT=y
 CONFIG_MI_SW_SYNC=y
 CONFIG_LZ4ASM=y
-CONFIG_SLIM_WALT=y
 # Xiaomi millet smart frozen framework (xaga port)
 # Disabled: the built-in framework's binder/signal/cgroup-freezer hooks
 # caused an endless reboot loop when entering recovery on this device
