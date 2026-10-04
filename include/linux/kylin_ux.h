@@ -23,6 +23,7 @@ struct task_struct;
 #define KYLIN_UX_INHERIT_RWSEM		0x2UL
 #define KYLIN_UX_INHERIT_MUTEX		0x4UL
 #define KYLIN_UX_INHERIT_FUTEX		0x8UL
+#define KYLIN_UX_INHERIT_ANIM		0x10UL
 
 /* direct ux states (oplus SA_TYPE_* subset) */
 #define KYLIN_UX_TYPE_NONE		0x0
