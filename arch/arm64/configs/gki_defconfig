@@ -767,6 +767,7 @@ CONFIG_LZ4ASM=y
 # CONFIG_MILLET_CGROUP is not set
 CONFIG_KYLIN_SWAPPINESS=y
 CONFIG_KYLIN_MM_OPT=y
+CONFIG_HYPER_RUST_OPT=y
 
 
 # Upstream-only additions (android13-5.15-lts)
