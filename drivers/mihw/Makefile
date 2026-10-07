@@ -4,5 +4,4 @@
 #
 
 obj-$(CONFIG_MI_UNION_POWER) += unionpower/
-obj-$(CONFIG_MIHW) += millet/
 obj-$(CONFIG_MI_RMAP_EFFICIENCY) += mi_rmap_efficiency/

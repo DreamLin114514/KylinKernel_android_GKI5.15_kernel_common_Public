@@ -753,19 +753,6 @@ CONFIG_KYLIN_READAHEAD_OPT=y
 CONFIG_MI_SW_SYNC=y
 CONFIG_LZ4ASM=y
 CONFIG_XRING_SCHED_VIP=y
-# Xiaomi millet smart frozen framework (xaga port)
-# Disabled: the built-in framework's binder/signal/cgroup-freezer hooks
-# caused an endless reboot loop when entering recovery on this device
-# (system boot was unaffected). The xring dijun-v-oss millet replacement
-# was also tested and still reboots recovery in a loop; kept disabled.
-# CONFIG_MIHW is not set
-# CONFIG_MILLET_CORE is not set
-# CONFIG_MILLET_SIG is not set
-# CONFIG_MILLET_BINDER is not set
-# CONFIG_MILLET_BINDER_GKI is not set
-# CONFIG_MILLET_PKG is not set
-# CONFIG_MILLET_HS is not set
-# CONFIG_MILLET_CGROUP is not set
 CONFIG_KYLIN_SWAPPINESS=y
 CONFIG_KYLIN_MM_OPT=y
 CONFIG_HYPER_RUST_OPT=y
