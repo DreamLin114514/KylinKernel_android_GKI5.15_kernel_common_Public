@@ -1525,7 +1525,12 @@ struct task_struct {
 		unsigned	user_dumpable:1;
 		});
 
+#ifdef CONFIG_KYLIN_FAS
+	/* Independent request; serialized by task_rq_lock(). */
+	ANDROID_KABI_USE(2, unsigned long kylin_fas_util_min);
+#else
 	ANDROID_KABI_RESERVE(2);
+#endif
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
 	ANDROID_KABI_RESERVE(5);
@@ -1913,6 +1918,9 @@ extern int sched_setscheduler_nocheck(struct task_struct *, int, const struct sc
 extern void sched_set_fifo(struct task_struct *p);
 extern void sched_set_fifo_low(struct task_struct *p);
 extern void sched_set_normal(struct task_struct *p, int nice);
+#ifdef CONFIG_KYLIN_FAS
+extern int sched_kylin_fas_request(struct task_struct *p, unsigned int util_min);
+#endif
 extern int sched_setattr(struct task_struct *, const struct sched_attr *);
 extern int sched_setattr_nocheck(struct task_struct *, const struct sched_attr *);
 extern struct task_struct *idle_task(int cpu);
