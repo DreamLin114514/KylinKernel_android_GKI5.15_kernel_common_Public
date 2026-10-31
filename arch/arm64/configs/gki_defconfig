@@ -754,6 +754,7 @@ CONFIG_LZ4ASM=y
 # CONFIG_XRING_SCHED_VIP is not set
 CONFIG_KYLIN_SWAPPINESS=y
 CONFIG_KYLIN_MM_OPT=y
+CONFIG_KYLIN_FAS=y
 
 
 # Upstream-only additions (android13-5.15-lts)
