@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 5
 PATCHLEVEL = 15
-SUBLEVEL = 220
+SUBLEVEL = 223
 EXTRAVERSION = -KylinKernel-261114-Test
 NAME = Trick or Treat
 

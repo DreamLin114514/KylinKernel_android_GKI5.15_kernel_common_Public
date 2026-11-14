@@ -33,6 +33,7 @@ struct address_space;
 struct page_vma_mapped_walk;
 struct cma;
 struct compact_control;
+struct readahead_control;
 
 DECLARE_RESTRICTED_HOOK(android_rvh_set_skip_swapcache_flags,
 			TP_PROTO(gfp_t *flags),
@@ -138,6 +139,13 @@ DECLARE_HOOK(android_vh_mmap_region,
 DECLARE_HOOK(android_vh_try_to_unmap_one,
 	TP_PROTO(struct vm_area_struct *vma, struct page *page, unsigned long addr, bool ret),
 	TP_ARGS(vma, page, addr, ret));
+DECLARE_HOOK(android_vh_get_page_wmark,
+	TP_PROTO(unsigned int alloc_flags, unsigned long *page_wmark),
+	TP_ARGS(alloc_flags, page_wmark));
+DECLARE_HOOK(android_vh_page_add_new_anon_rmap,
+	TP_PROTO(struct page *page, struct vm_area_struct *vma,
+		unsigned long address),
+	TP_ARGS(page, vma, address));
 DECLARE_HOOK(android_vh_cma_alloc_retry,
 	TP_PROTO(char *name, int *retry),
 	TP_ARGS(name, retry));
@@ -459,9 +467,6 @@ DECLARE_HOOK(android_vh_alloc_pages_reset_wmark,
 		unsigned long *did_some_progress, int *no_progress_loops),
 	TP_ARGS(gfp_mask, order, alloc_flags, did_some_progress,
 		no_progress_loops));
-DECLARE_HOOK(android_vh_get_page_wmark,
-	TP_PROTO(unsigned int alloc_flags, unsigned long *page_wmark),
-	TP_ARGS(alloc_flags, page_wmark));
 DECLARE_HOOK(android_vh_mm_direct_reclaim_enter,
 	TP_PROTO(unsigned int order),
 	TP_ARGS(order));
