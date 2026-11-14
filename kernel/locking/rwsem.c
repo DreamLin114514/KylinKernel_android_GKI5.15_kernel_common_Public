@@ -140,7 +140,7 @@
  * so an A/B baseline can be captured before enabling anything.
  * See /sys/kernel/rmap_rwsem_hack/ (created in this file).
  */
-int rmap_hack_enabled __read_mostly;		/* master fast-path switch */
+int rmap_hack_enabled __read_mostly = 1;	/* default on; sysfs can disable */		/* master fast-path switch */
 int rmap_hack_spin_count __read_mostly = 64;	/* bounded cpu_relax() budget */
 int rmap_hack_defer_contended __read_mostly;	/* defer blocking on contended rmap rwsems */
 
