@@ -325,12 +325,24 @@ static __always_inline bool unlock_rt_mutex_safe(struct rt_mutex_base *lock,
 static __always_inline int __waiter_prio(struct task_struct *task)
 {
 	int waiter_prio = 0;
+	int prio;
 
 	trace_android_vh_rtmutex_waiter_prio(task, &waiter_prio);
 	if (waiter_prio > 0)
 		return waiter_prio;
 
-	return task->prio;
+	/*
+	 * Keep the upstream clamp: fair-policy waiters all sort as
+	 * DEFAULT_PRIO, so the top waiter only changes on a real RT
+	 * priority change.  Returning the raw nice-derived prio gives
+	 * every CFS waiter a distinct rtmutex priority, so each enqueue
+	 * flips the top waiter and drags unrelated tasks through
+	 * rt_mutex_adjust_prio_chain() and the PI reweight path.
+	 */
+	prio = task->prio;
+	if (!rt_prio(prio))
+		return DEFAULT_PRIO;
+	return prio;
 }
 
 static __always_inline void
