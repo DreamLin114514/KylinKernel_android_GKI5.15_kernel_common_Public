@@ -4280,18 +4280,12 @@ restart:
 
 		VM_WARN_ON_ONCE(!full_scan && (type == LRU_GEN_FILE || can_swap));
 
-		while (!inc_min_seq(lruvec, type, can_swap)) {
-			spin_unlock_irq(&lruvec->lru_lock);
-			cond_resched();
-			spin_lock_irq(&lruvec->lru_lock);
-		}
 		if (inc_min_seq(lruvec, type, can_swap))
 			continue;
 
 		spin_unlock_irq(&lruvec->lru_lock);
 		cond_resched();
 		goto restart;
-
 	}
 
 	/*
