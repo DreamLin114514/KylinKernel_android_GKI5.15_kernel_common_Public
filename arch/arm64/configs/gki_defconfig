@@ -771,3 +771,4 @@ CONFIG_LOCK_EVENT_COUNTS=y
 CONFIG_RMAP_RWSEM_HACK=y
 
 # --- KylinKernel 261115: lock latency + smoothness tuning ---
+CONFIG_HZ_300=y
