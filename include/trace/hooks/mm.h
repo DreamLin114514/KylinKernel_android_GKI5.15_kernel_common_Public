@@ -352,7 +352,6 @@ DECLARE_HOOK(android_vh_filemap_map_pages,
 	TP_PROTO(struct file *file, pgoff_t first_pgoff,
 		pgoff_t last_pgoff, vm_fault_t ret),
 	TP_ARGS(file, first_pgoff, last_pgoff, ret));
-DECLARE_HOOK(android_vh_filemap_map_pages_range,	TP_PROTO(struct file *file, pgoff_t orig_start_pgoff,		pgoff_t last_pgoff, vm_fault_t ret),	TP_ARGS(file, orig_start_pgoff, last_pgoff, ret));
 DECLARE_HOOK(android_vh_do_swap_page_spf,
 	TP_PROTO(bool *allow_swap_spf),
 	TP_ARGS(allow_swap_spf));

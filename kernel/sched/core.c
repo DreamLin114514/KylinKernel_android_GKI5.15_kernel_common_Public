@@ -1497,29 +1497,11 @@ uclamp_eff_get(struct task_struct *p, enum uclamp_id clamp_id)
 	trace_android_rvh_uclamp_eff_get(p, clamp_id, &uc_max, &uc_eff, &ret);
 	if (ret)
 		return uc_eff;
+
+	/* System default restrictions always apply */
 	if (unlikely(uc_req.value > uc_max.value))
-		uc_req = uc_max;
+		return uc_max;
 
-#ifdef CONFIG_KYLIN_FAS
-	if (clamp_id == UCLAMP_MIN && fair_policy(p->policy) &&
-	    p->kylin_fas_util_min) {
-		struct uclamp_se max_eff = uclamp_eff_get(p, UCLAMP_MAX);
-		unsigned int floor = p->kylin_fas_util_min;
-
-		/* Only the added request is capped; original requests stay intact. */
-		floor = min_t(unsigned int, floor, p->uclamp_req[UCLAMP_MAX].value);
-		floor = min_t(unsigned int, floor, max_eff.value);
-		floor = min_t(unsigned int, floor, uc_max.value);
-#ifdef CONFIG_UCLAMP_TASK_GROUP
-		if (!task_group_is_autogroup(task_group(p)) &&
-		    task_group(p) != &root_task_group)
-			floor = min_t(unsigned int, floor,
-				task_group(p)->uclamp[UCLAMP_MAX].value);
-#endif
-		if (floor > uc_req.value)
-			uclamp_se_set(&uc_req, floor, false);
-	}
-#endif
 	return uc_req;
 }
 
@@ -1711,39 +1693,6 @@ static inline void uclamp_rq_reinc_id(struct rq *rq, struct task_struct *p,
 	if (clamp_id == UCLAMP_MAX && (rq->uclamp_flags & UCLAMP_FLAG_IDLE))
 		rq->uclamp_flags &= ~UCLAMP_FLAG_IDLE;
 }
-
-#ifdef CONFIG_KYLIN_FAS
-int sched_kylin_fas_request(struct task_struct *p, unsigned int util_min)
-{
-	struct rq_flags rf;
-	struct rq *rq;
-	int ret = 0;
-
-	if (util_min > SCHED_CAPACITY_SCALE)
-		return -EINVAL;
-	if (util_min)
-		static_branch_enable(&sched_uclamp_used);
-
-	rq = task_rq_lock(p, &rf);
-	if (util_min && (!fair_policy(p->policy) ||
-			READ_ONCE(p->flags) & PF_EXITING)) {
-		ret = -ESRCH;
-		util_min = 0;
-	}
-	if (p->kylin_fas_util_min != util_min) {
-		p->kylin_fas_util_min = util_min;
-		if (p->uclamp[UCLAMP_MIN].active) {
-			uclamp_rq_reinc_id(rq, p, UCLAMP_MIN);
-		} else if (util_min && task_on_rq_queued(p)) {
-			/* The static key may have been enabled after enqueue. */
-			uclamp_rq_inc(rq, p);
-		}
-	}
-	task_rq_unlock(rq, p, &rf);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(sched_kylin_fas_request);
-#endif
 
 static inline void
 uclamp_update_active(struct task_struct *p)
@@ -1976,11 +1925,6 @@ static void __setscheduler_uclamp(struct task_struct *p,
 static void uclamp_fork(struct task_struct *p)
 {
 	enum uclamp_id clamp_id;
-
-#ifdef CONFIG_KYLIN_FAS
-	/* A frame-session request belongs to the parent, not its children. */
-	p->kylin_fas_util_min = 0;
-#endif
 
 	/*
 	 * We don't need to hold task_rq_lock() when updating p->uclamp_* here
