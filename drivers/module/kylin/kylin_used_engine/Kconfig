@@ -1,0 +1,11 @@
+# Kylin Used Engine
+
+config KYLIN_USED_ENGINE
+	bool "Kylin Used Engine: kernel-user tuning/info interface"
+	default y
+	help
+	  Unified kernel<->userspace interface framework.  Features register
+	  read-only stat nodes under /proc/kylin_engine/<feature>/ (one bare
+	  value per node, easy to parse from userspace C code) and tunable
+	  knobs under /sys/kernel/kylin_engine/<feature>/.
+	  Built-in only; say Y to build into kernel.

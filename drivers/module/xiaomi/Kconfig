@@ -1,0 +1,34 @@
+# Xiaomi Modules
+
+config MI_SW_SYNC
+        tristate "Mi Software Sync Fence"
+        help
+          Software sync fence for display frame synchronization.
+          Say Y to build into kernel, M for module.
+
+source "drivers/module/xiaomi/kshrink_slabd/Kconfig"
+source "drivers/module/xiaomi/lz4asm/Kconfig"
+source "drivers/module/xiaomi/vip_sched/Kconfig"
+source "drivers/module/xiaomi/touch_boost/Kconfig"
+
+config MI_UNION_POWER
+        bool "MI UnionPower core: frame load / jank monitor"
+        default y
+        help
+          Port of Xiaomi's unionpower frame load and jank monitoring engine.
+          Receives frame queue/vsync events from the compositor via
+          /proc/unionpower/ioctl, tracks per-process frame intervals and flags
+          jank. Exposes /sys/.../unionpower/frame_jank. Requires the
+          SurfaceFlinger/compositor side to report frame events to be useful;
+          without reporting it is inert.
+
+
+config MI_RMAP_EFFICIENCY
+        bool "MI rmap efficiency: protect high-mapcount pages"
+        default y
+        depends on ANDROID_VENDOR_HOOKS
+        help
+          Skip high-mapcount pages (>= mi_mapcount_thres, default 32) during
+          reclaim to reduce CPU load caused by reverse mapping during memory
+          reclaim, protecting multi-process-shared pages (GPU/display buffers)
+          from being recycled. Faithful port of Xiaomi's mi_rmap_efficiency.

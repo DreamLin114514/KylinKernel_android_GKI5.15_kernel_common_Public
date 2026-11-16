@@ -1,0 +1,5 @@
+# Kylin Kernel Modules
+
+source "drivers/module/kylin/Kconfig"
+source "drivers/module/xiaomi/Kconfig"
+source "drivers/module/oplus/Kconfig"

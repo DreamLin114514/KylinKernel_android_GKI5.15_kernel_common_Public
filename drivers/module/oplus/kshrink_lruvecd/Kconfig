@@ -1,0 +1,14 @@
+config KSHRINK_LRUVECD
+       bool "Support async lruvecd shrink"
+       default y
+       help
+         Asynchronous shrink lruvecd optimization feature.
+         Pages whose trylock was contended during vmscan are marked
+         and reclaimed later by a dedicated kthread, instead of
+         stalling the reclaim path.
+         
+         This version implements pressure-adaptive behavior:
+         - Dynamic queue limits (8/16/32 MiB based on memory pressure)
+         - Bounded batch processing to reduce lock contention
+         - Pressure-adaptive scheduling and CPU affinity
+         - Comprehensive runtime statistics via /proc/kshrink_lruvecd_status

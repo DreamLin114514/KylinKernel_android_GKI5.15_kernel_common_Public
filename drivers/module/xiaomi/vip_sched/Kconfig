@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# VIP scheduler ported from xring dijun-v-oss, adapted to 5.15.
+# Original config symbol name is preserved.
+config XRING_SCHED_VIP
+	bool "VIP scheduler support"
+	depends on SMP
+	depends on ANDROID_VENDOR_HOOKS
+	help
+	  VIP task scheduling enhancement inside CFS: per-cpu vip run
+	  queue, dedicated wake-up cpu selection, pick_next preempting,
+	  and directed vip balance migration. Ported from xring
+	  dijun-v-oss xring-modules; built-in only.

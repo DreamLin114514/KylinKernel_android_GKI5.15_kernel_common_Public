@@ -1,0 +1,3 @@
+# Oplus Modules
+
+source "drivers/module/oplus/kshrink_lruvecd/Kconfig"

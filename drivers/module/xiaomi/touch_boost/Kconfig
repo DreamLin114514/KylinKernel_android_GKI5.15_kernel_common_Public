@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Touch boost ported from xring dijun-v-oss, adapted to 5.15.
+# Original config symbol name is preserved.
+config XRING_TOUCH_BOOST
+	tristate "Support for XRing Touch Boost Driver"
+	depends on ANDROID_VENDOR_HOOKS
+	default n
+	help
+	  This enables the XRing Touch Boost Driver. On a configured
+	  touch irq it keeps the cpu out of deep idle and drives the
+	  schedutil resolved frequency to policy max for a limited
+	  time. Ported from xring dijun-v-oss xring-modules; the freq
+	  and idle boost are implemented through the standard android
+	  vendor hooks (cpufreq resolve_freq / cpuidle idle_enter).
